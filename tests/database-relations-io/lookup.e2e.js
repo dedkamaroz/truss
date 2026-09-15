@@ -108,3 +108,45 @@ test('lookup matches numbers regardless of display format, and reports cycles in
   await expect(cell(page, row.id, look.id)).toHaveText('One thousand')
   expect(w.errors).toEqual([])
 })
+
+test('lookup cells take on the formatting of the source cell: option colours, number formats, links', async ({ page }) => {
+  const w = await watch(page)
+  await boot(page)
+  const products = await newDb(page, `Products ${uid()}`, {
+    Stage: ['select', { options: [{ name: 'Active', color: 'green' }, { name: 'Retired', color: 'red' }] }],
+    Tags: ['multi_select', { options: [{ name: 'Promo', color: 'orange' }, { name: 'New', color: 'blue' }] }],
+    Price: ['number', { format: 'aud' }],
+    Site: ['url'],
+  })
+  const opt = (p, name) => p.config.options.find((o) => o.name === name).id
+  const S = products.P
+  await addRows(page, products, [
+    { Name: 'Widget', Stage: opt(S.Stage, 'Active'), Tags: [opt(S.Tags, 'Promo'), opt(S.Tags, 'New')], Price: 1234.5, Site: 'https://example.com' },
+    { Name: 'Gadget', Stage: opt(S.Stage, 'Retired') },
+  ])
+  const orders = await newDb(page, `Orders ${uid()}`, { Product: ['text'] })
+  for (const name of ['Stage', 'Tags', 'Price', 'Site']) {
+    orders.P[name] = await api(page, 'POST', `${orders.base}/properties`, {
+      name, type: 'lookup', config: { sourcePropertyId: orders.P.Product.id, targetModuleId: products.module.id, matchPropertyId: S.Name.id, returnPropertyId: S[name].id },
+    })
+  }
+  const [a, b, c] = await addRows(page, orders, [{ Name: 'Order 1', Product: 'widget' }, { Name: 'Order 2', Product: 'Gadget' }, { Name: 'Order 3', Product: 'Nothing' }])
+  await open(page, orders)
+  const P = orders.P
+
+  await expect(cell(page, a.id, P.Stage.id).locator('.db-tag[data-color="green"]')).toHaveText('Active')
+  await expect(cell(page, b.id, P.Stage.id).locator('.db-tag[data-color="red"]')).toHaveText('Retired')
+  await expect(cell(page, a.id, P.Tags.id).locator('.db-tag[data-color="orange"]')).toHaveText('Promo')
+  await expect(cell(page, a.id, P.Tags.id).locator('.db-tag[data-color="blue"]')).toHaveText('New')
+  await expect(cell(page, a.id, P.Price.id)).toHaveText('$1,234.50')
+  await expect(cell(page, a.id, P.Site.id).locator('a')).toHaveCount(1)
+  await expect(cell(page, c.id, P.Stage.id)).toHaveText('#N/A')
+
+  // recolouring the option in the source database repaints the lookup
+  await api(page, 'PATCH', `${products.base}/properties/${S.Stage.id}`, { config: { ...S.Stage.config, options: S.Stage.config.options.map((o) => (o.name === 'Active' ? { ...o, color: 'purple' } : o)) } })
+  await open(page, orders)
+  await expect(cell(page, a.id, P.Stage.id).locator('.db-tag[data-color="purple"]')).toHaveText('Active')
+
+  await shot(page, 'lookup-formatting')
+  expect(w.errors).toEqual([])
+})

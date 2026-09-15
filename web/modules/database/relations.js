@@ -233,6 +233,18 @@ function detectLookupKind(prop) {
   return 'text'
 }
 
+/** The matched target row with its return column and database: { hit, ret, targetDb }, null when unset or blank, or an error value. */
+export function lookupHit(row, prop) {
+  const { db, source, targetDb, match, ret } = lookupParts(prop)
+  if (!db || !source || !targetDb || !match || !ret) return null
+  const key = lookupKey(row, source, db)
+  if (!key) return null
+  const index = lookupIndex(targetDb, match)
+  if (!index) return err('#CYCLE!')
+  const hit = index.get(key)
+  return hit ? { hit, ret, targetDb } : err('#N/A')
+}
+
 /**
  * VLOOKUP: the return column of the first target row whose match column equals this row's source column
  * (case-insensitive). Blank when the search value is empty, #N/A when nothing matches.
@@ -240,14 +252,9 @@ function detectLookupKind(prop) {
  */
 export function lookupValue(row, prop) {
   return cached(row, prop, () => {
-    const { db, source, targetDb, match, ret } = lookupParts(prop)
-    if (!db || !source || !targetDb || !match || !ret) return null
-    const key = lookupKey(row, source, db)
-    if (!key) return null
-    const index = lookupIndex(targetDb, match)
-    if (!index) return err('#CYCLE!')
-    const hit = index.get(key)
-    if (!hit) return err('#N/A')
+    const found = lookupHit(row, prop)
+    if (!found || isError(found)) return found
+    const { hit, ret, targetDb } = found
     const v = T.getValue(hit, ret)
     if (isError(v)) return v
     const kind = lookupKind(prop)

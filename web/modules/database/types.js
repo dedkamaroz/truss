@@ -9,7 +9,7 @@ import api from '../../lib/api.js'
 import { keepInView } from './fit.js'
 import {
   bindTypes, relationEditor, relationSetup, rollupSetup, formulaSetup, relatedTitles, rollupValue, rollupText, rollupKind, rollupParts, rollupFn,
-  lookupSetup, lookupValue, lookupText, lookupKind, lookupParts,
+  lookupSetup, lookupHit, lookupValue, lookupText, lookupKind, lookupParts,
   formulaValue, formulaKind, formulaDateSerial, formulaSyntaxError, compareMixed, isError, dbFor, ERROR_HINTS,
 } from './relations.js'
 
@@ -484,11 +484,14 @@ export const TYPES = {
     filtersFor: (prop) => ({ number: numberOps, date: dayOps, boolean: checkboxOps, text: textOps }[lookupKind(prop)]),
     day: (v, prop) => (lookupKind(prop) === 'date' && !isError(v) ? v : null),
     serialise: (v, prop) => lookupText(v, prop),
-    render: (v, prop) => {
+    render: (v, prop, row) => {
       if (v == null || v === '') return null
       if (isError(v)) return renderFormulaValue(v)
       const kind = lookupKind(prop)
       if (kind === 'boolean') return renderFormulaValue(v)
+      // show the source cell as its own type draws it: option colours, number formats, links
+      const found = row && lookupHit(row, prop)
+      if (found && !isError(found)) return renderValue(found.hit, found.ret, found.targetDb)
       return h('span', { class: kind === 'number' ? 'db-number db-lookup' : 'db-text db-lookup' }, lookupText(v, prop))
     },
     formula: (v, prop) => (lookupKind(prop) === 'date' && !isError(v) ? serialOfDay(v) : v),
