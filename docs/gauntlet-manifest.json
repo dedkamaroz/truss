@@ -1,0 +1,21 @@
+{
+  "run": "truss-v1",
+  "baseRef": "truss-baseline",
+  "reviewBranch": "review/truss-v1",
+  "landingMode": "worktree-default",
+  "maxAttempts": 3,
+  "worstCaseSpawns": 59,
+  "spawnCeiling": 118,
+  "model": "opus",
+  "pieces": {
+    "server-core": { "wave": 1, "status": "pending" },
+    "formula-engine": { "wave": 1, "status": "pending" },
+    "ui-shell": { "wave": 2, "status": "pending" },
+    "scripts-server": { "wave": 2, "status": "pending" },
+    "database": { "wave": 3, "status": "pending" },
+    "sheets": { "wave": 3, "status": "pending" },
+    "notebooks": { "wave": 3, "status": "pending" },
+    "database-relations-io": { "wave": 4, "status": "pending" },
+    "scripts-ui": { "wave": 4, "status": "pending" }
+  }
+}
