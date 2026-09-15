@@ -11,7 +11,7 @@ export const ROLLUP_FNS = ['count', 'count_values', 'count_unique', 'sum', 'aver
   'percent_checked', 'percent_empty', 'earliest_date', 'latest_date', 'show_original']
 const OPTION_TYPES = new Set(['select', 'multi_select', 'status'])
 const STRING_TYPES = new Set(['title', 'text', 'url', 'email', 'phone'])
-const READ_ONLY = new Set(['created_time', 'last_edited_time', 'rollup', 'formula'])
+const READ_ONLY = new Set(['created_time', 'last_edited_time', 'rollup', 'formula', 'lookup'])
 const MAX_TEXT = 100_000
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
@@ -141,6 +141,8 @@ export const VALUE_TYPES = {
   },
   rollup: { readOnly: true },
   formula: { readOnly: true },
+  // Computed in the browser: the first row of another database whose match column equals this row's search column.
+  lookup: { readOnly: true },
   created_time: { readOnly: true },
   last_edited_time: { readOnly: true },
 }
@@ -171,7 +173,7 @@ const optId = (v) => (v == null || v === '' ? null : typeof v === 'string' ? v :
 function normaliseConfig(type, config, prev = {}) {
   if (config != null && !isObj(config)) throw bad('invalid_config', 'config must be an object')
   // Computed and relation configs merge partial patches; other types replace the config whole.
-  const merge = type === 'relation' || type === 'rollup' || type === 'formula'
+  const merge = type === 'relation' || type === 'rollup' || type === 'formula' || type === 'lookup'
   const c = merge ? { ...prev, ...config } : { ...(config ?? prev) }
   if (OPTION_TYPES.has(type)) {
     if (c.options == null) c.options = type === 'status' ? DEFAULT_STATUS() : []
@@ -203,6 +205,14 @@ function normaliseConfig(type, config, prev = {}) {
     const out = { relationPropertyId: optId(c.relationPropertyId), targetPropertyId: optId(c.targetPropertyId), fn: c.fn ?? 'count' }
     if (out.relationPropertyId === undefined || out.targetPropertyId === undefined) throw bad('invalid_config', 'relationPropertyId and targetPropertyId must be property ids')
     if (!ROLLUP_FNS.includes(out.fn)) throw bad('invalid_config', `fn must be one of ${ROLLUP_FNS.join(', ')}`)
+    return out
+  }
+  if (type === 'lookup') {
+    const out = {}
+    for (const key of ['sourcePropertyId', 'targetModuleId', 'matchPropertyId', 'returnPropertyId']) {
+      out[key] = optId(c[key])
+      if (out[key] === undefined) throw bad('invalid_config', `${key} must be an id`)
+    }
     return out
   }
   if (type === 'formula') {
@@ -316,6 +326,7 @@ function createService(ctx) {
     prop: db.prepare('SELECT * FROM db_properties WHERE id = ? AND module_id = ?'),
     propAny: db.prepare('SELECT * FROM db_properties WHERE id = ?'),
     relationsTo: db.prepare("SELECT * FROM db_properties WHERE type = 'relation' AND json_extract(config, '$.targetModuleId') = ?"),
+    lookupsTo: db.prepare("SELECT * FROM db_properties WHERE type = 'lookup' AND json_extract(config, '$.targetModuleId') = ?"),
     insertProp: db.prepare('INSERT INTO db_properties (id, module_id, name, type, config, sort_order, width) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     setPropConfig: db.prepare('UPDATE db_properties SET config = ? WHERE id = ?'),
     maxPropOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM db_properties WHERE module_id = ?'),
@@ -383,6 +394,16 @@ function createService(ctx) {
     if (!targetModuleId) return
     const m = q.module.get(targetModuleId)
     if (!m || m.type !== 'database') throw bad('invalid_config', 'targetModuleId must be an existing database')
+  }
+
+  /** A lookup's columns must belong to the right databases: search column here, match and return columns in the target. */
+  function checkLookup(moduleId, config) {
+    const { sourcePropertyId: source, targetModuleId: target, matchPropertyId: match, returnPropertyId: ret } = config
+    checkTarget(target)
+    if (source && !q.prop.get(source, moduleId)) throw bad('invalid_config', 'sourcePropertyId must be a property of this database')
+    for (const id of [match, ret]) {
+      if (id && (!target || !q.prop.get(id, target))) throw bad('invalid_config', 'matchPropertyId and returnPropertyId must be properties of the target database')
+    }
   }
 
   /** Creates the reverse property for relation prop (a propOut) and links both. Backfills reverse values from prop's values. */
@@ -462,6 +483,11 @@ function createService(ctx) {
 
   /** Before a module is deleted: relations in other databases that point at it are unlinked and their values cleared. */
   function unlinkTarget(moduleId) {
+    for (const prop of q.lookupsTo.all(moduleId)) {
+      if (prop.module_id === moduleId) continue
+      const config = parseJson(prop.config, {})
+      q.setPropConfig.run(JSON.stringify({ ...config, targetModuleId: null, matchPropertyId: null, returnPropertyId: null }), prop.id)
+    }
     for (const prop of q.relationsTo.all(moduleId)) {
       if (prop.module_id === moduleId) continue // deleted along with the module
       const { targetModuleId, twoWay, reversePropertyId, ...rest } = parseJson(prop.config, {})
@@ -496,6 +522,7 @@ function createService(ctx) {
     const id = uuid()
     const cfg = normaliseConfig(type, config)
     if (type === 'relation') checkTarget(cfg.targetModuleId)
+    if (type === 'lookup') checkLookup(moduleId, cfg)
     const twoWay = type === 'relation' && cfg.twoWay && cfg.targetModuleId
     if (type === 'relation') cfg.twoWay = false // enabled by createReverse
     q.insertProp.run(id, moduleId, nameOf(name, defaultName(type, props)), type, JSON.stringify(cfg), sort_order ?? q.maxPropOrder.get(moduleId).m + 1,
@@ -526,6 +553,7 @@ function createService(ctx) {
     if (type === 'status' && prop.type !== 'status' && !body.config && carryOptions) {
       config.options = config.options.map((o) => ({ ...o, group: o.group || 'todo' }))
     }
+    if (type === 'lookup') checkLookup(moduleId, config)
     const changedRows = []
     const rows = q.rows.all(moduleId)
     const oldReverse = reverseOf(prop)

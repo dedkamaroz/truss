@@ -278,3 +278,58 @@ describe('JSON import', () => {
     assert.equal(await count(), n)
   })
 })
+
+describe('lookup properties', () => {
+  test('config is validated, the target must be a database, and it resets when the target is deleted', async () => {
+    const details = await newDb('Lookup details')
+    const orders = await newDb('Lookup orders')
+    const notebook = await ok('POST', '/api/modules', { type: 'notebook' })
+    const text = await ok('POST', `${orders.base}/properties`, { name: 'Code', type: 'text' })
+    const config = { sourcePropertyId: text.id, targetModuleId: details.m.id, matchPropertyId: details.titleId, returnPropertyId: details.titleId }
+    const look = await ok('POST', `${orders.base}/properties`, { name: 'Label', type: 'lookup', config })
+    assert.deepEqual(look.config, config)
+    await fail('POST', `${orders.base}/properties`, { name: 'Bad', type: 'lookup', config: { ...config, matchPropertyId: 42 } })
+    await fail('POST', `${orders.base}/properties`, { name: 'Bad', type: 'lookup', config: { ...config, targetModuleId: notebook.id } })
+    await fail('PATCH', `${orders.base}/properties/${look.id}`, { config: { targetModuleId: notebook.id } })
+    // columns must belong to the right database
+    await fail('POST', `${orders.base}/properties`, { name: 'Bad', type: 'lookup', config: { ...config, sourcePropertyId: details.titleId } })
+    await fail('POST', `${orders.base}/properties`, { name: 'Bad', type: 'lookup', config: { ...config, returnPropertyId: text.id } })
+    await fail('POST', `${orders.base}/properties`, { name: 'Bad', type: 'lookup', config: { ...config, targetModuleId: null } })
+    // values are computed in the browser: writing one is refused
+    const row = await ok('POST', `${orders.base}/rows`, { values: { [text.id]: 'x' } })
+    await fail('PATCH', `${orders.base}/rows/${row.id}`, { values: { [look.id]: 'y' } })
+
+    await ok('DELETE', `/api/modules/${details.m.id}`)
+    const after = (await orders.load()).properties.find((p) => p.id === look.id)
+    assert.deepEqual(after.config, { sourcePropertyId: text.id, targetModuleId: null, matchPropertyId: null, returnPropertyId: null })
+    for (const id of [orders.m.id, notebook.id]) await ok('DELETE', `/api/modules/${id}`)
+  })
+
+  test('JSON import keeps lookups: ids are remapped for this database, kept for another one', async () => {
+    const details = await newDb('Lookup import target')
+    const doc = {
+      truss: 1,
+      database: {
+        id: 'src', title: 'Lookup import',
+        properties: [
+          { id: 'n', name: 'Name', type: 'title' },
+          { id: 'c', name: 'Code', type: 'text' },
+          { id: 'l1', name: 'Other', type: 'lookup', config: { sourcePropertyId: 'c', targetModuleId: details.m.id, matchPropertyId: details.titleId, returnPropertyId: details.titleId } },
+          { id: 'l0', name: 'Chained', type: 'lookup', config: { sourcePropertyId: 'l2', targetModuleId: 'src', matchPropertyId: 'n', returnPropertyId: 'l3' } },
+          { id: 'l2', name: 'Self', type: 'lookup', config: { sourcePropertyId: 'c', targetModuleId: 'src', matchPropertyId: 'n', returnPropertyId: 'c' } },
+          { id: 'l3', name: 'Gone', type: 'lookup', config: { sourcePropertyId: 'c', targetModuleId: 'missing', matchPropertyId: 'x', returnPropertyId: 'y' } },
+        ],
+        rows: [{ values: { n: 'A', c: 'B', l1: 'ignored' } }],
+      },
+    }
+    const imported = await ok('POST', '/api/databases/import', doc, 201)
+    const d = await ok('GET', `/api/databases/${imported.module.id}`)
+    const by = (name) => d.properties.find((p) => p.name === name)
+    assert.deepEqual(by('Other').config, { sourcePropertyId: by('Code').id, targetModuleId: details.m.id, matchPropertyId: details.titleId, returnPropertyId: details.titleId })
+    assert.deepEqual(by('Self').config, { sourcePropertyId: by('Code').id, targetModuleId: imported.module.id, matchPropertyId: by('Name').id, returnPropertyId: by('Code').id })
+    assert.deepEqual(by('Chained').config, { sourcePropertyId: by('Self').id, targetModuleId: imported.module.id, matchPropertyId: by('Name').id, returnPropertyId: by('Gone').id }, 'refers to lookups defined later')
+    assert.deepEqual(by('Gone').config, { sourcePropertyId: by('Code').id, targetModuleId: null, matchPropertyId: null, returnPropertyId: null })
+    assert.equal(d.rows.length, 1)
+    for (const id of [details.m.id, imported.module.id]) await ok('DELETE', `/api/modules/${id}`)
+  })
+})

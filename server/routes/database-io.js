@@ -58,7 +58,7 @@ export default function register(router, ctx) {
     if (!properties.some((p) => p.type === 'title')) svc.createProperty(moduleId, { name: 'Name', type: 'title', sort_order: 0 })
     const relationTarget = new Map() // new relation property id -> target module id
     properties.forEach((p, i) => {
-      if (p.type === 'rollup') return
+      if (p.type === 'rollup' || p.type === 'lookup') return
       let type = p.type
       let config = isObj(p.config) ? p.config : undefined
       if (type === 'relation') {
@@ -72,15 +72,33 @@ export default function register(router, ctx) {
       if (typeof p.id === 'string') propIds.set(p.id, np.id)
       if (type === 'relation') relationTarget.set(np.id, config.targetModuleId)
     })
+    // Computed properties can refer to each other in any order: create them first, then set their configs once every id is known.
+    const computed = []
     properties.forEach((p, i) => {
-      if (p.type !== 'rollup') return
-      const c = isObj(p.config) ? p.config : {}
-      const relationPropertyId = propIds.get(c.relationPropertyId) ?? null
-      const selfTarget = relationTarget.get(relationPropertyId) === moduleId
-      const targetPropertyId = typeof c.targetPropertyId === 'string' ? (selfTarget ? propIds.get(c.targetPropertyId) ?? null : c.targetPropertyId) : null
-      const np = svc.createProperty(moduleId, { name: p.name, type: 'rollup', config: { relationPropertyId, targetPropertyId, fn: c.fn }, width: width(p.width), sort_order: i + 1 })
+      if (p.type !== 'rollup' && p.type !== 'lookup') return
+      const np = svc.createProperty(moduleId, { name: p.name, type: p.type, width: width(p.width), sort_order: i + 1 })
       if (typeof p.id === 'string') propIds.set(p.id, np.id)
+      computed.push({ p, np })
     })
+    for (const { p, np } of computed) {
+      const c = isObj(p.config) ? p.config : {}
+      const own = (id) => (typeof id === 'string' ? propIds.get(id) ?? null : null)
+      if (p.type === 'rollup') {
+        const relationPropertyId = own(c.relationPropertyId)
+        const selfTarget = relationTarget.get(relationPropertyId) === moduleId
+        const targetPropertyId = typeof c.targetPropertyId === 'string' ? (selfTarget ? own(c.targetPropertyId) : c.targetPropertyId) : null
+        svc.updateProperty(moduleId, np.id, { config: { relationPropertyId, targetPropertyId, fn: c.fn } })
+        continue
+      }
+      const target = c.targetModuleId === srcId ? moduleId : c.targetModuleId
+      const exists = target === moduleId || (typeof target === 'string' && q.module.get(target)?.type === 'database')
+      const other = (id) => (typeof id !== 'string' ? null : target === moduleId ? own(id) : q.prop.get(id, target) ? id : null)
+      svc.updateProperty(moduleId, np.id, {
+        config: exists
+          ? { sourcePropertyId: own(c.sourcePropertyId), targetModuleId: target, matchPropertyId: other(c.matchPropertyId), returnPropertyId: other(c.returnPropertyId) }
+          : { sourcePropertyId: own(c.sourcePropertyId), targetModuleId: null, matchPropertyId: null, returnPropertyId: null },
+      })
+    }
 
     /* rows: plain values first, same-database links once every row id is known */
     const props = svc.propMap(moduleId)

@@ -72,8 +72,8 @@ export function createStore(api, moduleId) {
       let loaded = false
       while (queue.length) {
         const db = queue.shift()
-        for (const p of db.properties.filter(isRelation)) {
-          const target = p.config?.targetModuleId
+        for (const p of db.properties) {
+          const target = typeOf(p).target?.(p)
           if (!target || seen.has(target)) continue
           seen.add(target)
           let rdb = s.related.get(target)
@@ -270,6 +270,10 @@ export function createStore(api, moduleId) {
         const p = await api.post(`${base}/properties`, data)
         setProperties([...s.properties, p])
         if (isRelation(p)) await s.reload().catch(() => {})
+        else if (typeOf(p).computed) {
+          await s.ensureRelated().catch(() => {}) // a lookup may read a database that isn't loaded yet
+          touchAll()
+        }
         emit({ kind: 'schema' })
         return p
       } catch (err) {
@@ -294,7 +298,10 @@ export function createStore(api, moduleId) {
           if (local) (local.values = r.values, touch(local))
         }
         if (isRelation(prev) || isRelation(property)) await s.reload().catch(() => {})
-        else if (typeOf(property).computed) touchAll()
+        else if (typeOf(property).computed) {
+          await s.ensureRelated().catch(() => {})
+          touchAll()
+        }
         emit({ kind: 'schema' })
         return property
       } catch (err) {
@@ -407,7 +414,9 @@ export function createStore(api, moduleId) {
 
   async function fetchRelated(targetId, knownStamp) {
     try {
-      const [data, st] = await Promise.all([api.get(`/api/databases/${enc(targetId)}`), knownStamp ? { stamp: knownStamp } : api.get(`/api/databases/${enc(targetId)}/stamp`)])
+      // The stamp is read before the data: a change landing in between leaves an older stamp, so the next poll refetches.
+      const st = knownStamp ? { stamp: knownStamp } : await api.get(`/api/databases/${enc(targetId)}/stamp`)
+      const data = await api.get(`/api/databases/${enc(targetId)}`)
       if (destroyed) return null
       const properties = [...data.properties].sort((a, b) => a.sort_order - b.sort_order)
       const rdb = {

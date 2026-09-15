@@ -2053,7 +2053,8 @@ html.db-dragging * {
   flex-wrap: wrap;
 }
 
-.db-rollup {
+.db-rollup,
+.db-lookup {
   color: var(--color-text);
 }
 

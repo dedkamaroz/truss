@@ -160,6 +160,192 @@ export function rollupText(v, prop) {
 /** 'number' | 'date' | 'text': how a rollup's values sort and filter. */
 export const rollupKind = (prop) => ({ percent: 'number', count: 'number', number: 'number', date: 'date' }[rollupFn(prop).kind] || 'text')
 
+/* ------------------------------------------------------------------ lookups */
+
+/** { db, source, targetDb, match, ret } for a lookup property (any may be null). */
+export function lookupParts(prop) {
+  const db = dbFor(prop.module_id)
+  const c = prop.config || {}
+  const targetDb = dbFor(c.targetModuleId)
+  return {
+    db, targetDb,
+    source: db?.propById.get(c.sourcePropertyId) || null,
+    match: targetDb?.propById.get(c.matchPropertyId) || null,
+    ret: targetDb?.propById.get(c.returnPropertyId) || null,
+  }
+}
+
+/** Match key: the unformatted text of a value (raw numbers, DD/MM/YYYY dates, option names), trimmed and lowercased. */
+function lookupKey(row, prop, db) {
+  const t = T.typeOf(prop)
+  const v = T.getValue(row, prop)
+  if (isError(v)) return ''
+  return lower(String((t.serialise || t.text)(v, prop, row, db) ?? '').trim())
+}
+
+const indexes = new WeakMap() // target db -> { gen, byProp: Map(propId -> Map(key -> first row)) }
+const building = new Set() // `${moduleId}|${propId}` while an index is being built
+
+/** First row of db per match key, rebuilt once per data generation. Null while that index is being built (a cycle). */
+function lookupIndex(db, match) {
+  let entry = indexes.get(db)
+  if (entry?.gen !== GEN) indexes.set(db, (entry = { gen: GEN, byProp: new Map() }))
+  let index = entry.byProp.get(match.id)
+  if (index) return index
+  const key = `${db.moduleId}|${match.id}`
+  if (building.has(key)) return null
+  building.add(key)
+  try {
+    index = new Map()
+    for (const r of db.rows) {
+      const k = lookupKey(r, match, db)
+      if (k && !index.has(k)) index.set(k, r)
+    }
+  } finally {
+    building.delete(key)
+  }
+  entry.byProp.set(match.id, index)
+  return index
+}
+
+/** 'number' | 'date' | 'boolean' | 'text': how a lookup's values display, sort and filter. */
+const lookupKinds = new WeakMap() // prop -> { gen, kind }
+export function lookupKind(prop) {
+  const hit = lookupKinds.get(prop)
+  if (hit?.gen === GEN) return hit.kind
+  const kind = detectLookupKind(prop)
+  lookupKinds.set(prop, { gen: GEN, kind })
+  return kind
+}
+
+function detectLookupKind(prop) {
+  const { ret, targetDb } = lookupParts(prop)
+  if (!ret || !targetDb) return 'text'
+  const t = T.typeOf(ret)
+  if (t.day && !t.computed) return 'date'
+  if (t.formats) return 'number'
+  for (const r of targetDb.rows.slice(0, 50)) {
+    const v = T.getValue(r, ret)
+    if (typeof v === 'boolean' && !t.isEmpty?.(v)) return 'boolean'
+    if (typeof v === 'number') return 'number'
+    if (v != null && v !== '') return 'text'
+  }
+  return 'text'
+}
+
+/**
+ * VLOOKUP: the return column of the first target row whose match column equals this row's source column
+ * (case-insensitive). Blank when the search value is empty, #N/A when nothing matches.
+ * Values are plain: number, boolean, ISO day (date kind) or display text.
+ */
+export function lookupValue(row, prop) {
+  return cached(row, prop, () => {
+    const { db, source, targetDb, match, ret } = lookupParts(prop)
+    if (!db || !source || !targetDb || !match || !ret) return null
+    const key = lookupKey(row, source, db)
+    if (!key) return null
+    const index = lookupIndex(targetDb, match)
+    if (!index) return err('#CYCLE!')
+    const hit = index.get(key)
+    if (!hit) return err('#N/A')
+    const v = T.getValue(hit, ret)
+    if (isError(v)) return v
+    const kind = lookupKind(prop)
+    if (kind === 'date') return T.typeOf(ret).day(v, ret) || null
+    if (kind === 'number') return typeof v === 'number' ? v : null
+    if (kind === 'boolean') return v === true
+    return T.valueText(hit, ret, targetDb) || null
+  })
+}
+
+export function lookupText(v, prop) {
+  if (v == null || v === '') return ''
+  if (isError(v)) return v.error
+  const kind = lookupKind(prop)
+  if (kind === 'date') return formatDate(v)
+  if (kind === 'boolean') return v ? 'Checked' : 'Unchecked'
+  if (kind === 'number') {
+    const { ret } = lookupParts(prop)
+    const t = ret && T.typeOf(ret)
+    return t?.formats ? t.text(v, ret) : plain.format(v)
+  }
+  return String(v)
+}
+
+/** Pick the search column, database, match column and return column. Resolves the lookup config or null. */
+export async function lookupSetup({ store, current }) {
+  let modules
+  try {
+    modules = (await api.get('/api/modules')).filter((m) => m.type === 'database')
+  } catch (e) {
+    toast(e?.message || 'Could not load databases', { type: 'error' })
+    return null
+  }
+  const searchable = store.properties
+  const state = {
+    sourcePropertyId: current?.sourcePropertyId || titlePropOf(store)?.id || searchable[0]?.id || null,
+    targetModuleId: current?.targetModuleId || modules.find((m) => m.id !== store.moduleId)?.id || modules[0]?.id || null,
+    matchPropertyId: current?.matchPropertyId || null,
+    returnPropertyId: current?.returnPropertyId || null,
+  }
+  let targetProps = []
+  const field = (label, control, help) => h('label', { class: 'db-dialog-field' }, h('span', { class: 'field-label' }, label), control, help ? h('span', { class: 'db-dialog-help' }, help) : null)
+  const sourceSel = h('select', { class: 'db-select db-lookup-source', 'aria-label': 'Search with' }, searchable.map((p) => h('option', { value: p.id }, p.name)))
+  const dbSel = h('select', { class: 'db-select db-lookup-target', 'aria-label': 'In database' },
+    modules.map((m) => h('option', { value: m.id }, m.id === store.moduleId ? `${m.title} (this database)` : m.title)))
+  const matchSel = h('select', { class: 'db-select db-lookup-match', 'aria-label': 'Match on' })
+  const returnSel = h('select', { class: 'db-select db-lookup-return', 'aria-label': 'Return' })
+  let footer
+  const options = (sel, value) => {
+    sel.replaceChildren(...targetProps.map((p) => h('option', { value: p.id }, p.name)))
+    sel.value = value || ''
+  }
+  async function loadTarget() {
+    const id = state.targetModuleId
+    let props = dbFor(id)?.properties
+    if (!props && id) {
+      for (const sel of [matchSel, returnSel]) (sel.disabled = true, sel.replaceChildren(h('option', {}, 'Loading...')))
+      if (footer) footer.confirm.disabled = true
+      props = await api.get(`/api/databases/${encodeURIComponent(id)}`).then((d) => d.properties, (e) => {
+        toast(e?.message || 'Could not load that database', { type: 'error' })
+        return []
+      })
+      for (const sel of [matchSel, returnSel]) sel.disabled = false
+    }
+    if (id !== state.targetModuleId) return // changed while loading
+    targetProps = [...(props || [])].sort((a, b) => a.sort_order - b.sort_order)
+    const has = (pid) => targetProps.some((p) => p.id === pid)
+    if (!has(state.matchPropertyId)) state.matchPropertyId = targetProps.find((p) => p.type === 'title')?.id || targetProps[0]?.id || null
+    if (!has(state.returnPropertyId)) state.returnPropertyId = targetProps.find((p) => p.id !== state.matchPropertyId)?.id || state.matchPropertyId
+    options(matchSel, state.matchPropertyId)
+    options(returnSel, state.returnPropertyId)
+    if (footer) footer.confirm.disabled = !ready()
+  }
+  const ready = () => !!(state.sourcePropertyId && state.targetModuleId && state.matchPropertyId && state.returnPropertyId)
+  sourceSel.value = state.sourcePropertyId || ''
+  dbSel.value = state.targetModuleId || ''
+  sourceSel.addEventListener('change', () => { state.sourcePropertyId = sourceSel.value })
+  dbSel.addEventListener('change', () => { state.targetModuleId = dbSel.value; loadTarget() })
+  matchSel.addEventListener('change', () => { state.matchPropertyId = matchSel.value })
+  returnSel.addEventListener('change', () => { state.returnPropertyId = returnSel.value })
+  await loadTarget()
+  const body = h('div', { class: 'db-dialog db-lookup-setup' },
+    field('Search with', sourceSel, 'The value in this row to look for.'),
+    field('In database', dbSel),
+    field('Match on', matchSel, 'The first row whose value here matches (ignoring upper and lower case) is used.'),
+    field('Return', returnSel, 'Shown in this column. #N/A means no row matched.'))
+  return modal({
+    title: current ? 'Lookup settings' : 'New lookup', description: 'Show a value from another database, like VLOOKUP in Excel.',
+    size: 'sm', className: 'db-modal db-lookup-modal', actions: [], body,
+    onOpen: ({ close, dialog }) => {
+      footer = dialogFooter(close, current ? 'Save' : 'Create lookup', () => ready() && close({ ...state }))
+      footer.confirm.disabled = !ready()
+      dialog.append(footer.el)
+      sourceSel.focus()
+    },
+  })
+}
+
 /* ------------------------------------------------------------------ formulas */
 
 const syntaxCache = new Map()

@@ -9,6 +9,7 @@ import api from '../../lib/api.js'
 import { keepInView } from './fit.js'
 import {
   bindTypes, relationEditor, relationSetup, rollupSetup, formulaSetup, relatedTitles, rollupValue, rollupText, rollupKind, rollupParts, rollupFn,
+  lookupSetup, lookupValue, lookupText, lookupKind, lookupParts,
   formulaValue, formulaKind, formulaDateSerial, formulaSyntaxError, compareMixed, isError, dbFor, ERROR_HINTS,
 } from './relations.js'
 
@@ -348,6 +349,7 @@ export const TYPES = {
   },
   relation: {
     label: 'Relation', icon: 'relation', defaultWidth: 220, relation: true,
+    target: (prop) => prop.config?.targetModuleId,
     get: (row, prop) => row.values[prop.id],
     text: relationText,
     compare: (a, b, prop) => a.length - b.length || collator.compare(relationText(a, prop), relationText(b, prop)),
@@ -410,6 +412,38 @@ export const TYPES = {
         { label: 'Relation', value: relation?.name || 'Not set', cls: 'db-rollup-relation-item', onClick: () => openSetupMenu(null, prop, ctx) },
         { label: 'Property', value: target?.name || 'Not set', cls: 'db-rollup-property-item', onClick: () => openSetupMenu(null, prop, ctx) },
         { label: 'Calculate', value: rollupFn(prop).label, cls: 'db-rollup-fn-item', onClick: () => openSetupMenu(null, prop, ctx) },
+      ]
+    },
+  },
+  lookup: {
+    label: 'Lookup', icon: 'search', readOnly: true, computed: true, defaultWidth: 180,
+    target: (prop) => prop.config?.targetModuleId,
+    get: (row, prop) => lookupValue(row, prop),
+    isEmpty: (v) => v == null || v === '',
+    text: (v, prop) => lookupText(v, prop),
+    alignFor: (prop) => (lookupKind(prop) === 'number' ? 'end' : null),
+    compare: compareMixed,
+    filters: textOps,
+    filtersFor: (prop) => ({ number: numberOps, date: dayOps, boolean: checkboxOps, text: textOps }[lookupKind(prop)]),
+    day: (v, prop) => (lookupKind(prop) === 'date' && !isError(v) ? v : null),
+    serialise: (v, prop) => lookupText(v, prop),
+    render: (v, prop) => {
+      if (v == null || v === '') return null
+      if (isError(v)) return renderFormulaValue(v)
+      const kind = lookupKind(prop)
+      if (kind === 'boolean') return renderFormulaValue(v)
+      return h('span', { class: kind === 'number' ? 'db-number db-lookup' : 'db-text db-lookup' }, lookupText(v, prop))
+    },
+    formula: (v, prop) => (lookupKind(prop) === 'date' && !isError(v) ? serialOfDay(v) : v),
+    setup: (o) => lookupSetup(o),
+    menuItems: (prop, ctx) => {
+      const { source, targetDb, match, ret } = lookupParts(prop)
+      const open = () => openSetupMenu(null, prop, ctx)
+      return [
+        { label: 'Search with', value: source?.name || 'Not set', cls: 'db-lookup-source-item', onClick: open },
+        { label: 'In database', value: targetDb?.module?.title || (prop.config?.targetModuleId ? 'Loading' : 'Not set'), cls: 'db-lookup-target-item', onClick: open },
+        { label: 'Match on', value: match?.name || 'Not set', cls: 'db-lookup-match-item', onClick: open },
+        { label: 'Return', value: ret?.name || 'Not set', cls: 'db-lookup-return-item', onClick: open },
       ]
     },
   },
