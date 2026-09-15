@@ -39,6 +39,15 @@ test('300 modules: sidebar rendered and interactive within 700 ms of DOMContentL
   await page.keyboard.press('Escape')
 })
 
+// Text boxes that clip (overflow hidden + ellipsis) must be tall enough for descenders (g, j, p, q, y).
+async function expectNoVerticalTextClipping(page, where) {
+  const clipped = await page.evaluate(() => [...document.querySelectorAll('body *')]
+    .filter((e) => e.childNodes.length && e.textContent.trim() && e.getClientRects().length &&
+      getComputedStyle(e).textOverflow === 'ellipsis' && e.scrollHeight > e.clientHeight)
+    .map((e) => `${e.className}: "${e.textContent.trim()}" ${e.scrollHeight}>${e.clientHeight}`))
+  expect(clipped, where).toEqual([])
+}
+
 for (const theme of ['light', 'dark']) {
   for (const [width, height] of [[1440, 900], [1000, 700]]) {
     test(`visual: ${theme} ${width}x${height}`, async ({ browser }) => {
@@ -55,6 +64,9 @@ for (const theme of ['light', 'dark']) {
       const all = (await apiCall(page, 'GET', '/api/modules')).body
       // keep the sidebar at exactly the 15 modules below for consistent screenshots
       await Promise.all(all.map((m) => apiCall(page, 'POST', `/api/modules/${m.id}/archive`)))
+      // guarantee the archive view has content even when this test runs alone
+      const old = await createModule(page, { type: 'database', title: 'Old supplier register' })
+      await apiCall(page, 'POST', `/api/modules/${old.id}/archive`)
       let first
       for (const [i, name] of names.entries()) {
         const m = await createModule(page, { type: types[i % 3], title: name, icon: i % 5 === 0 ? '📊' : undefined })
@@ -67,6 +79,7 @@ for (const theme of ['light', 'dark']) {
       // Nothing in the sidebar overflows horizontally
       const overflow = await page.locator('.sidebar').evaluate((s) => s.scrollWidth - s.clientWidth)
       expect(overflow).toBeLessThanOrEqual(0)
+      await expectNoVerticalTextClipping(page, 'home')
       await shot(page, `${tag}-home`)
 
       // hover + focus states are visible (background changes)
@@ -77,11 +90,13 @@ for (const theme of ['light', 'dark']) {
 
       await page.locator('.sidebar-new').click()
       await expect(page.getByRole('dialog')).toBeVisible()
+      await expectNoVerticalTextClipping(page, 'template picker')
       await shot(page, `${tag}-template-picker`)
       await page.keyboard.press('Escape')
 
       await page.goto('/#/archive')
       await expect(page.locator('.archive-row').first()).toBeVisible()
+      await expectNoVerticalTextClipping(page, 'archive')
       await shot(page, `${tag}-archive`)
 
       await page.goto(`/#/m/${first.id}`)
@@ -91,6 +106,7 @@ for (const theme of ['light', 'dark']) {
       await shot(page, `${tag}-menu`)
       await page.getByRole('menuitem', { name: 'Delete' }).click()
       await expect(page.getByRole('dialog')).toBeVisible()
+      await expectNoVerticalTextClipping(page, 'modal')
       await shot(page, `${tag}-modal`)
       await page.keyboard.press('Escape')
 

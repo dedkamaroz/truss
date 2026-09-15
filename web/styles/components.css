@@ -30,6 +30,8 @@
 }
 
 .btn-label {
+  /* Normal line box so overflow:hidden never clips descenders (g, j, p, q, y). */
+  line-height: var(--leading-tight, 1.3);
   overflow: hidden;
   text-overflow: ellipsis;
 }

@@ -449,10 +449,13 @@ a.crumb:hover {
   flex: none;
 }
 
-.crumb-icon {
+.crumb > .crumb-icon {
   display: grid;
   place-items: center;
   flex: none;
+  /* never truncated, so never clip the emoji glyph */
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .crumb-title {
