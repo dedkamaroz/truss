@@ -84,6 +84,15 @@ describe('script runs', () => {
     assert.deepEqual(run.output_attachment_ids, [])
   })
 
+  test('a script registered earlier with a network path fails without touching the path', async () => {
+    const target = await t.notebook()
+    const s = await t.register(fixture('fail.bat'))
+    t.s.ctx.db.prepare('UPDATE scripts SET path = ? WHERE id = ?').run('\\\\192.0.2.1\\share\\fail.bat', s.id)
+    const run = await t.waitRun((await t.start(s.id, target)).id, 10000)
+    assert.equal(run.status, 'failed')
+    assert.match(run.stderr, /local drive, not a network path/)
+  })
+
   test('at most two runs execute at once and all three succeed', async () => {
     const target = await t.notebook()
     const s = await t.register(fixture('sleep.bat'))

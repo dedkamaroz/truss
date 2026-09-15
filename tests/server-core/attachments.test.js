@@ -5,6 +5,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { boot, raw } from './helpers.js'
 import { sanitizeFilename } from '../../server/attachments.js'
+import { startServer } from '../../server/main.js'
 
 const sha = (buf) => crypto.createHash('sha256').update(buf).digest('hex')
 
@@ -196,5 +197,46 @@ describe('ctx.attachments API', () => {
 
     assert.throws(() => att.create({ moduleId: 'nope', filename: 'x', buffer: 'x' }), /Module not found/)
     assert.throws(() => att.create({ moduleId: mod.id, filename: 'x', source: 'bogus', buffer: 'x' }))
+  })
+})
+
+describe('orphaned attachment folders', () => {
+  test('startup removes attachment folders with no row and leaves everything else', async () => {
+    const first = await boot()
+    const root = path.join(first.dataDir, 'attachments')
+    const mod = (await first.call('POST', '/api/modules', { json: { type: 'notebook' } })).json
+    const kept = first.s.ctx.attachments.create({ moduleId: mod.id, filename: 'keep.txt', buffer: 'keep' })
+    const orphan = crypto.randomUUID()
+    fs.mkdirSync(path.join(root, orphan, 'nested'), { recursive: true })
+    fs.writeFileSync(path.join(root, orphan, 'nested', 'left-behind.pdf'), 'x')
+    fs.mkdirSync(path.join(root, 'not-an-attachment'))
+    const uuidFile = crypto.randomUUID()
+    fs.writeFileSync(path.join(root, uuidFile), 'a file, not a folder')
+    await first.s.close()
+
+    const second = await boot(first.dataDir)
+    try {
+      assert.ok(!fs.existsSync(path.join(root, orphan)), 'orphaned folder removed')
+      assert.equal(fs.readFileSync(second.s.ctx.attachments.pathOf(kept.id), 'utf8'), 'keep')
+      assert.ok(fs.existsSync(path.join(root, 'not-an-attachment')), 'folders not named like attachments are left alone')
+      assert.ok(fs.existsSync(path.join(root, uuidFile)), 'files are left alone')
+      assert.equal(second.s.ctx.attachments.removeOrphans(), 0)
+    } finally {
+      await second.s.close()
+    }
+  })
+})
+
+describe('orphan sweep with Truss already running', () => {
+  test('a second copy on the same port fails to start and leaves an in-progress upload folder alone', async () => {
+    const running = await boot()
+    try {
+      const inProgress = path.join(running.dataDir, 'attachments', crypto.randomUUID())
+      fs.mkdirSync(inProgress, { recursive: true }) // folder exists, row not written yet
+      await assert.rejects(startServer({ port: running.s.port, dataDir: running.dataDir }), /EADDRINUSE/)
+      assert.ok(fs.existsSync(inProgress))
+    } finally {
+      await running.s.close()
+    }
   })
 })

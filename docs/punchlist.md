@@ -18,7 +18,5 @@ Baseline tag: `truss-baseline` - review branch: `review/truss-v1` - landing mode
 
 - Custom formula list to be supplied by the user (goes in `web/lib/formula/custom.js`).
 - Built-in viewers for images/documents (currently opened in external apps).
-- Module deletion commits before attachment folders are removed; if removal fails, the folders are orphaned (found by dualcheck, pre-existing). Consider reconciling orphaned folders at startup.
 - Module titles are now unique on the server (create, rename, import add " 2", " 3"); duplicates created before this change are left as they are.
-- Script registration accepts UNC paths (\\host\share\x.bat); consider rejecting them (judge caveat).
 - Formula TODAY/NOW use the host timezone while the shell formats as Australia/Sydney (judge, not verified; accepted by the user).

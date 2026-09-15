@@ -35,6 +35,19 @@ export function sanitizeFilename(name) {
   return s || 'file'
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Removes a folder; a failure (e.g. a file locked by Excel or antivirus) is logged, and removeOrphans retries at the next start.
+function removeDir(dir) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true })
+    return true
+  } catch (err) {
+    console.warn(`[truss] could not remove ${dir}: ${err.message}`)
+    return false
+  }
+}
+
 export function createAttachments(db, dataDir) {
   const root = path.join(dataDir, 'attachments')
   const now = () => new Date().toISOString()
@@ -128,7 +141,7 @@ export function createAttachments(db, dataDir) {
       const row = q.get.get(id)
       if (!row) return false
       q.del.run(id)
-      fs.rmSync(path.join(root, row.id), { recursive: true, force: true })
+      removeDir(path.join(root, row.id))
       return true
     },
 
@@ -141,7 +154,19 @@ export function createAttachments(db, dataDir) {
 
     // Removes directories of the given attachment ids (rows already gone, e.g. via cascade).
     removeFiles(ids) {
-      for (const id of ids) fs.rmSync(path.join(root, id), { recursive: true, force: true })
+      for (const id of ids) removeDir(path.join(root, id))
+    },
+
+    // Deletes attachment folders that no attachment row refers to (left behind when a delete could not remove them).
+    // Run at startup, before any upload can have a folder without its row yet. Returns the number removed.
+    removeOrphans() {
+      if (!fs.existsSync(root)) return 0
+      const known = new Set(db.prepare('SELECT id FROM attachments').all().map((r) => r.id))
+      let removed = 0
+      for (const d of fs.readdirSync(root, { withFileTypes: true })) {
+        if (d.isDirectory() && UUID.test(d.name) && !known.has(d.name) && removeDir(path.join(root, d.name))) removed++
+      }
+      return removed
     },
   }
   return api

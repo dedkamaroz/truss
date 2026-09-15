@@ -3,7 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { httpError } from '../http.js'
-import { createRunner } from '../runner.js'
+import { createRunner, isNetworkPath } from '../runner.js'
 
 const BATCH_FORBIDDEN = /["%^&|<>!]/
 const KINDS = { '.bat': 'bat', '.cmd': 'bat', '.ps1': 'ps1' }
@@ -26,8 +26,9 @@ export const BROWSE_SCRIPT = [
 export function validateScriptPath(input) {
   if (typeof input !== 'string' || !input.trim()) throw httpError(400, 'invalid_path', 'path is required')
   const raw = input.trim()
-  // Drive-absolute (C:\...) or UNC (\\server\share); rejects relative and root-relative (\foo) paths.
-  if (!/^([a-zA-Z]:[\\/]|\\\\[^\\/])/.test(raw)) throw httpError(400, 'invalid_path', 'path must be absolute')
+  if (isNetworkPath(raw)) throw httpError(400, 'network_path', 'Scripts must be on a local drive, not a network path')
+  // Drive-absolute (C:\...) only; rejects relative and root-relative (\foo) paths.
+  if (!/^[a-zA-Z]:[\\/]/.test(raw)) throw httpError(400, 'invalid_path', 'path must be absolute')
   const p = path.win32.normalize(raw)
   const kind = KINDS[path.extname(p).toLowerCase()]
   if (!kind) throw httpError(400, 'invalid_extension', 'Only .bat, .cmd and .ps1 scripts are supported')

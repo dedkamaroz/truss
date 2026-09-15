@@ -138,6 +138,10 @@ export async function startServer({ port = 4717, dataDir, host = '127.0.0.1' } =
     server.listen(port, host, resolve)
   })
   actualPort = server.address().port
+  // Only after the port is ours: a second copy of Truss started on the same port fails above instead of deleting the
+  // folder of an upload the running copy has not recorded yet. Runs before any request can be handled.
+  const orphans = ctx.attachments.removeOrphans()
+  if (orphans) console.log(`[truss] removed ${orphans} orphaned attachment folder${orphans === 1 ? '' : 's'}`)
   const url = `http://127.0.0.1:${actualPort}/`
 
   return {

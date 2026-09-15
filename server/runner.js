@@ -34,6 +34,10 @@ export function killTree(pid, sync = false) {
   }
 }
 
+// Network and device paths (\\server\share, \\?\, \\.\): touching one makes Windows connect over SMB and send the
+// user's NTLM credentials to that host, so they are refused before any file access.
+export const isNetworkPath = (p) => /^[\\/]{2}/.test(String(p))
+
 // Builds the spawn command for a script. Exported for tests; the path is validated at registration.
 export function commandFor(script) {
   if (script.kind === 'bat') {
@@ -141,6 +145,8 @@ export function createRunner({ db, dataDir, attachments }) {
     const script = run.script_id ? q.script.get(run.script_id) : null
     const fail = (msg) => finalize(runId, state, { status: 'failed', exitCode: null, stdout: '', stderr: `[truss] ${msg}`, outputDir: null })
     if (!script) return fail('The script was deleted before this run started.')
+    // Scripts registered before network paths were refused.
+    if (isNetworkPath(script.path)) return fail(`Scripts must be on a local drive, not a network path: ${script.path}`)
     if (!fs.existsSync(script.path)) return fail(`Script file not found: ${script.path}`)
 
     const runDir = path.join(runsRoot, runId)

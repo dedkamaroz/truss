@@ -34,6 +34,9 @@ describe('script registry', () => {
     await expect400({ path: 'scripts\\run.bat' }, 'invalid_path')
     await expect400({ path: '.\\run.bat' }, 'invalid_path')
     await expect400({ path: '\\rooted\\run.bat' }, 'invalid_path')
+    // network and device paths are refused before any file access (192.0.2.1 is a documentation-only address)
+    for (const p of ['\\\\192.0.2.1\\share\\x.bat', '//192.0.2.1/share/x.ps1', '\\\\?\\C:\\x.bat', '\\\\.\\C:\\x.cmd', ' \\\\192.0.2.1\\s\\x.bat'])
+      await expect400({ path: p }, 'network_path')
     await expect400({ path: path.join(dir, 'does-not-exist.bat') }, 'file_not_found')
     await expect400({ path: touch('tool.exe') }, 'invalid_extension')
     await expect400({ path: touch('a&b\\x.bat') }, 'unsafe_path')
@@ -80,6 +83,8 @@ describe('script registry', () => {
 
     const badPatch = await t.call('PATCH', `/api/scripts/${bat.id}`, { json: { path: touch('x&y\\z.bat') } })
     assert.equal(badPatch.status, 400)
+    const netPatch = await t.call('PATCH', `/api/scripts/${bat.id}`, { json: { path: '\\\\192.0.2.1\\share\\x.bat' } })
+    assert.equal(netPatch.json?.error?.code, 'network_path')
     assert.equal((await t.call('PATCH', `/api/scripts/${bat.id}`, { json: { timeout_sec: 0 } })).status, 400)
     assert.equal((await t.call('PATCH', `/api/scripts/${bat.id}`, { json: { config: [1] } })).status, 400)
     assert.equal((await t.call('GET', '/api/scripts')).json.find((s) => s.id === bat.id).kind, 'ps1', 'failed patch changed nothing')
