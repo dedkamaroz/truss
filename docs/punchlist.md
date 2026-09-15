@@ -8,9 +8,9 @@ Baseline tag: `truss-baseline` - review branch: `review/truss-v1` - landing mode
 | 1 | formula-engine | passed | 1 | Merged (commit 55a6376). Critic: 69 tests + 74 spot checks pass. Minor: very deep nested formula could overflow stack; ponytail notes on whole-row/col external ranges (#REF!) and linear whole-column checks. |
 | 2 | ui-shell | passed | 2 | Merged (commit 37c4a36, merge 1ea22cb). Critic: 19/19 Playwright ui-shell, 28/28 server-core, 69/69 formula-engine pass; 17 extra sanitizer attacks blocked; 300-module sidebar renders in 29-34 ms. Attempt 1 failed (binary-looking sanitize.js regex, clipped labels/emoji), fixed in attempt 2. Note: worker-based module existence probe keeps 404s out of the console (judged legitimate). |
 | 2 | scripts-server | passed | 1 | Merged (commit 7dc4888, merge d6c9834). Critic: 18/18 scripts-server, 28/28 server-core, 69/69 formula-engine, 2/2 Playwright pass; cancel/timeout kill full process trees, injection filenames inert, output capped at 1 MB, startup recovery marks runs failed. Minor: attachment-copy fixtures pass filenames to nested powershell -Command; tests/scripts-server/helpers.js reuses server-core helpers. |
-| 3 | database | pending | - | |
-| 3 | sheets | pending | - | |
-| 3 | notebooks | pending | - | |
+| 3 | database | passed | 1 | Merged (commit 4a01cc9, merge e73803f). Critic: 16/16 node, 14/14 Playwright database; 10,000 rows ready in 379 ms with at most 34 row elements; all five view types persist; types.js is the single type registry. Minor: filter menu uses native dropdowns; title-cell "Open" button covers title end without ellipsis; list view "+ New" row line spans only button width. Caused tests/ui-shell/boot.e2e.js regression (see follow-ups). |
+| 3 | sheets | passed | 1 | Merged (commit 7093b8e, merge c9af86a). Critic: 22/22 node, 24/24 Playwright sheets; open 215 ms, cell commit 5.1 ms, at most 629 cell elements; budget template cross-sheet SUM, column insert rewrite, undo/redo, CRLF TSV paste verified. Note: shell sidebar crowds the page at 400px wide (shell issue). Caused tests/ui-shell/boot.e2e.js regression (see follow-ups). |
+| 3 | notebooks | passed | 2 | Merged (commit 2845428, merge 855586d). Critic: 7/7 node, 17/17 Playwright notebooks; 1,000-block page opens in 124-169 ms, 500-page tree in 35-48 ms; hostile paste stays inert. Attempt 2 fixed Ctrl+K propagation and attachment buttons covering filename. Minor: Backspace-merge of split bold leaves adjacent tags; slash filter "to" matches Divider/Image; API-created notebook needs reload to show in sidebar (modules:changed not emitted). Caused tests/ui-shell/boot.e2e.js regression (see follow-ups). |
 | 4 | database-relations-io | pending | - | |
 | 4 | scripts-ui | pending | - | |
 
@@ -18,3 +18,4 @@ Baseline tag: `truss-baseline` - review branch: `review/truss-v1` - landing mode
 
 - Custom formula list to be supplied by the user (goes in `web/lib/formula/custom.js`).
 - Built-in viewers for images/documents (currently opened in external apps).
+- tests/ui-shell/boot.e2e.js:4 ("boots with no module files") fails at line 32 after Wave 3: it expects the "not available" placeholder for database, sheet and notebook types, which now have real modules (spec section 5.2). Update the test to check only types with no module yet. Reported by all three Wave 3 critics.

@@ -12,9 +12,9 @@
     "formula-engine": { "wave": 1, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
     "ui-shell": { "wave": 2, "status": "passed", "attempts": 2, "wastedAttempts": 0, "merged": true },
     "scripts-server": { "wave": 2, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
-    "database": { "wave": 3, "status": "pending" },
-    "sheets": { "wave": 3, "status": "pending" },
-    "notebooks": { "wave": 3, "status": "pending" },
+    "database": { "wave": 3, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
+    "sheets": { "wave": 3, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
+    "notebooks": { "wave": 3, "status": "passed", "attempts": 2, "wastedAttempts": 0, "merged": true },
     "database-relations-io": { "wave": 4, "status": "pending" },
     "scripts-ui": { "wave": 4, "status": "pending" }
   }
