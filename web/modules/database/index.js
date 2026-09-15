@@ -10,6 +10,7 @@ import { createListView, createGalleryView } from './cards.js'
 import { createRowPanel } from './peek.js'
 import { sortMenu, filterMenu, groupMenu, propertiesMenu, propertyPicker } from './menus.js'
 import { todayIso, canCover, canCalendar } from './types.js'
+import { exportCsv, exportJson, importIntoDatabase, importNewDatabase, pickFile, mountImportPage } from './io.js'
 
 const VIEW_TYPES = {
   table: { label: 'Table', icon: 'table', create: createTableView },
@@ -105,6 +106,17 @@ function mount(el, mctx) {
       allowNone: true, noneLabel: 'No cover', onPick: (id) => ctx.setConfig({ cover_property: id || 'none' }),
     }), 'db-cover-btn')
     els.propsBtn = toolBtn('Properties', 'eye', (b) => propertiesMenu(b, ctx), 'db-props-btn')
+    els.moreBtn = h('button', { type: 'button', class: 'btn btn-ghost btn-sm btn-icon db-tool db-more-btn', title: 'Import and export', 'aria-label': 'Import and export' }, icon('more', { size: 16 }))
+    els.moreBtn.addEventListener('click', () => menu(els.moreBtn, [
+      { header: 'Export' },
+      { label: 'Export this view as CSV', icon: 'download', onClick: () => exportCsv(ctx, 'view') },
+      { label: 'Export all rows as CSV', icon: 'download', onClick: () => exportCsv(ctx, 'all') },
+      { label: 'Export database as JSON', icon: 'download', onClick: () => exportJson(ctx) },
+      'divider',
+      { header: 'Import' },
+      { label: 'Import CSV into this database', icon: 'upload', onClick: async () => { const f = await pickFile('.csv,text/csv'); if (f) importIntoDatabase(ctx, f) } },
+      { label: 'Import as a new database', icon: 'upload', onClick: async () => { const f = await pickFile('.csv,.json,text/csv,application/json'); if (f) importNewDatabase(f, { navigate }) } },
+    ], { align: 'end' }))
     els.newBtn = h('button', { type: 'button', class: 'btn btn-primary btn-sm db-new' }, icon('plus', { size: 14 }), h('span', { class: 'btn-label' }, 'New'))
     els.newBtn.addEventListener('click', async () => {
       const v = view()
@@ -119,7 +131,7 @@ function mount(el, mctx) {
 
     els.toolbar = h('div', { class: 'db-toolbar' },
       h('div', { class: 'db-tabs-wrap' }, els.tabs, els.addView),
-      h('div', { class: 'db-actions' }, els.searchWrap, els.filterBtn, els.sortBtn, els.groupBtn, els.coverBtn, els.propsBtn, els.newBtn))
+      h('div', { class: 'db-actions' }, els.searchWrap, els.filterBtn, els.sortBtn, els.groupBtn, els.coverBtn, els.propsBtn, els.moreBtn, els.newBtn))
     els.viewHost = h('div', { class: 'db-view-host' })
     els.pageHost = h('div', { class: 'db-page-host', hidden: true })
     root.replaceChildren(els.toolbar, els.viewHost, els.pageHost)
@@ -345,6 +357,7 @@ function mount(el, mctx) {
       destroyed = true
       store.flush()
       unsubscribe()
+      store.destroy()
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onPointer, true)
       closePeek()
@@ -365,4 +378,14 @@ export default {
   type: 'database',
   icon: 'database',
   mount,
+  init({ registry }) {
+    registry.registerRoute('/import', {
+      title: 'Import',
+      mount: (el, rctx) => {
+        loadCss(CSS_URL)
+        return mountImportPage(el, rctx)
+      },
+    })
+    registry.registerSidebarItem({ id: 'database-import', label: 'Import', icon: 'upload', href: '#/import' })
+  },
 }

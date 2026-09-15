@@ -57,9 +57,9 @@ export function createRowPanel(ctx, rowId, { mode = 'peek', onClose, onOpenPage,
   })
 
   addProp.addEventListener('click', () => typePicker(addProp, {
-    title: 'New property',
-    onPick: async (type) => {
-      const p = await store.createProperty({ type }).catch(() => null)
+    title: 'New property', store,
+    onPick: async (type, config) => {
+      const p = await store.createProperty(config ? { type, config } : { type }).catch(() => null)
       if (!p) return
       requestAnimationFrame(() => {
         const label = fields.querySelector(`.db-field[data-prop="${p.id}"] .db-field-label`)

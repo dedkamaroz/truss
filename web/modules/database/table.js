@@ -2,7 +2,7 @@
 
 import { h } from '../../lib/ui.js'
 import { icon } from '../../lib/icons.js'
-import { typeOf, propIcon, renderValue, startEdit, groupLabel, EMPTY_GROUP } from './types.js'
+import { typeOf, propIcon, renderValue, startEdit, groupLabel, alignOf, EMPTY_GROUP } from './types.js'
 import { viewRows, groupRows, isGroupable, groupValue } from './query.js'
 import { createVirtual } from './virtual.js'
 import { dragGesture } from './drag.js'
@@ -58,9 +58,9 @@ export function createTableView(host, ctx) {
     colsSig = sig
     const add = h('button', { type: 'button', class: 'db-th-add', title: 'Add a property', 'aria-label': 'Add a property' }, icon('plus', { size: 16 }))
     add.addEventListener('click', () => typePicker(add, {
-      title: 'New property',
-      onPick: async (type) => {
-        const p = await store.createProperty({ type }).catch(() => null)
+      title: 'New property', store,
+      onPick: async (type, config) => {
+        const p = await store.createProperty(config ? { type, config } : { type }).catch(() => null)
         if (!p) return
         requestAnimationFrame(() => {
           const th = head.querySelector(`.db-th[data-prop="${p.id}"]`)
@@ -203,8 +203,9 @@ export function createTableView(host, ctx) {
     if (p.type === 'title') kids.push(h('button', { type: 'button', class: 'db-open-btn', tabindex: '-1', title: 'Open in side peek' }, icon('sidebar', { size: 12 }), h('span', {}, 'Open')))
     td.replaceChildren(...kids.filter(Boolean))
     td.classList.toggle('is-readonly', !!typeOf(p).readOnly)
-    const align = typeOf(p).align
+    const align = alignOf(p)
     if (align) td.dataset.align = align
+    else delete td.dataset.align
   }
 
   function updateGroup(el, it) {

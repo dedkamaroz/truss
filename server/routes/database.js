@@ -1,4 +1,4 @@
-// Database content type: properties, rows, views, value validation, type conversion and templates.
+// Database content type: properties, rows, views, value validation, type conversion, relations and templates.
 
 import crypto from 'node:crypto'
 import { httpError } from '../http.js'
@@ -7,9 +7,11 @@ import { transaction } from '../db.js'
 export const VIEW_TYPES = ['table', 'board', 'list', 'gallery', 'calendar']
 export const OPTION_COLORS = ['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']
 export const NUMBER_FORMATS = ['number', 'number_with_commas', 'percent', 'aud']
+export const ROLLUP_FNS = ['count', 'count_values', 'count_unique', 'sum', 'average', 'min', 'max', 'median', 'range',
+  'percent_checked', 'percent_empty', 'earliest_date', 'latest_date', 'show_original']
 const OPTION_TYPES = new Set(['select', 'multi_select', 'status'])
 const STRING_TYPES = new Set(['title', 'text', 'url', 'email', 'phone'])
-const READ_ONLY = new Set(['created_time', 'last_edited_time'])
+const READ_ONLY = new Set(['created_time', 'last_edited_time', 'rollup', 'formula'])
 const MAX_TEXT = 100_000
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
@@ -18,7 +20,7 @@ const uuid = () => crypto.randomUUID()
 const now = () => new Date().toISOString()
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
 
-function parseJson(text, fallback) {
+export function parseJson(text, fallback) {
   try {
     const v = JSON.parse(text)
     return v ?? fallback
@@ -35,6 +37,12 @@ function validIsoDate(s) {
 }
 
 /* ------------------------------------------------------------------ per-type value rules */
+
+const existingIdsStmt = new WeakMap() // db -> statement
+function existingRowIds(db, moduleId, ids) {
+  if (!existingIdsStmt.has(db)) existingIdsStmt.set(db, db.prepare('SELECT id FROM db_rows WHERE module_id = ? AND id IN (SELECT value FROM json_each(?))'))
+  return new Set(existingIdsStmt.get(db).all(moduleId, JSON.stringify(ids)).map((r) => r.id))
+}
 
 // Each entry: validate(value, prop, ctx) -> normalised value, or undefined for "empty". Throws 400 when invalid.
 // New property types add one entry here (and one in web/modules/database/types.js).
@@ -117,6 +125,22 @@ export const VALUE_TYPES = {
       return out.length ? out : undefined
     },
   },
+  // Array of row ids in the target database. Ids that no longer exist are dropped silently.
+  relation: {
+    validate(v, prop, ctx) {
+      if (v == null) return undefined
+      if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) throw bad('invalid_value', `"${prop.name}" must be an array of row ids`)
+      const ids = [...new Set(v)]
+      if (!ids.length) return undefined
+      const target = prop.config.targetModuleId
+      if (!target) throw bad('invalid_value', `"${prop.name}" is not linked to a database yet`)
+      const existing = existingRowIds(ctx.db, target, ids)
+      const out = ids.filter((id) => existing.has(id))
+      return out.length ? out : undefined
+    },
+  },
+  rollup: { readOnly: true },
+  formula: { readOnly: true },
   created_time: { readOnly: true },
   last_edited_time: { readOnly: true },
 }
@@ -142,9 +166,13 @@ const DEFAULT_STATUS = () => [
   { id: uuid(), name: 'Done', color: 'green', group: 'complete' },
 ]
 
+const optId = (v) => (v == null || v === '' ? null : typeof v === 'string' ? v : undefined)
+
 function normaliseConfig(type, config, prev = {}) {
   if (config != null && !isObj(config)) throw bad('invalid_config', 'config must be an object')
-  const c = { ...(config ?? prev) }
+  // Computed and relation configs merge partial patches; other types replace the config whole.
+  const merge = type === 'relation' || type === 'rollup' || type === 'formula'
+  const c = merge ? { ...prev, ...config } : { ...(config ?? prev) }
   if (OPTION_TYPES.has(type)) {
     if (c.options == null) c.options = type === 'status' ? DEFAULT_STATUS() : []
     if (!Array.isArray(c.options)) throw bad('invalid_config', 'options must be an array')
@@ -164,6 +192,23 @@ function normaliseConfig(type, config, prev = {}) {
     if (c.format == null) c.format = 'number'
     if (!NUMBER_FORMATS.includes(c.format)) throw bad('invalid_config', `format must be one of ${NUMBER_FORMATS.join(', ')}`)
     if (c.decimals != null && (!Number.isInteger(c.decimals) || c.decimals < 0 || c.decimals > 6)) throw bad('invalid_config', 'decimals must be 0 to 6')
+  }
+  if (type === 'relation') {
+    // targetModuleId and twoWay are checked by the relation logic; reversePropertyId is managed by the server.
+    const target = optId(c.targetModuleId)
+    if (target === undefined) throw bad('invalid_config', 'targetModuleId must be a database id')
+    return { targetModuleId: target, twoWay: c.twoWay === true, reversePropertyId: optId(prev.reversePropertyId) ?? null }
+  }
+  if (type === 'rollup') {
+    const out = { relationPropertyId: optId(c.relationPropertyId), targetPropertyId: optId(c.targetPropertyId), fn: c.fn ?? 'count' }
+    if (out.relationPropertyId === undefined || out.targetPropertyId === undefined) throw bad('invalid_config', 'relationPropertyId and targetPropertyId must be property ids')
+    if (!ROLLUP_FNS.includes(out.fn)) throw bad('invalid_config', `fn must be one of ${ROLLUP_FNS.join(', ')}`)
+    return out
+  }
+  if (type === 'formula') {
+    const expression = c.expression ?? ''
+    if (typeof expression !== 'string' || expression.length > 10_000) throw bad('invalid_config', 'expression must be text up to 10,000 characters')
+    return { expression }
   }
   return c
 }
@@ -215,6 +260,7 @@ function findOrAddOption(config, name) {
 function convertValue(from, to, v, oldConfig, newConfig, ctx) {
   if (v == null) return undefined
   if (from === to) return v
+  if (from === 'relation' || to === 'relation') return undefined // row ids have no meaning in other types
   if (OPTION_TYPES.has(from) && OPTION_TYPES.has(to)) {
     const ids = (Array.isArray(v) ? v : [v]).filter((id) => newConfig.options.some((o) => o.id === id))
     if (to === 'multi_select') return ids.length ? ids : undefined
@@ -253,23 +299,34 @@ function convertValue(from, to, v, oldConfig, newConfig, ctx) {
   return undefined
 }
 
-/* ------------------------------------------------------------------ routes */
+/* ------------------------------------------------------------------ service (shared by routes and import) */
 
-export default function register(router, ctx) {
+const services = new WeakMap() // ctx -> service
+
+export function databaseService(ctx) {
+  if (!services.has(ctx)) services.set(ctx, createService(ctx))
+  return services.get(ctx)
+}
+
+function createService(ctx) {
   const { db } = ctx
   const q = {
     module: db.prepare('SELECT * FROM modules WHERE id = ?'),
     props: db.prepare('SELECT * FROM db_properties WHERE module_id = ? ORDER BY sort_order, rowid'),
     prop: db.prepare('SELECT * FROM db_properties WHERE id = ? AND module_id = ?'),
+    propAny: db.prepare('SELECT * FROM db_properties WHERE id = ?'),
+    relationsTo: db.prepare("SELECT * FROM db_properties WHERE type = 'relation' AND json_extract(config, '$.targetModuleId') = ?"),
     insertProp: db.prepare('INSERT INTO db_properties (id, module_id, name, type, config, sort_order, width) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+    setPropConfig: db.prepare('UPDATE db_properties SET config = ? WHERE id = ?'),
     maxPropOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM db_properties WHERE module_id = ?'),
     deleteProp: db.prepare('DELETE FROM db_properties WHERE id = ?'),
     rows: db.prepare('SELECT * FROM db_rows WHERE module_id = ? ORDER BY sort_order, rowid'),
+    rowsWithKey: db.prepare(`SELECT id, "values" FROM db_rows WHERE module_id = ? AND json_type("values", '$."' || ? || '"') IS NOT NULL`),
     row: db.prepare('SELECT * FROM db_rows WHERE id = ? AND module_id = ?'),
     insertRow: db.prepare('INSERT INTO db_rows (id, module_id, sort_order, "values", notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     updateRow: db.prepare('UPDATE db_rows SET "values" = ?, notes = ?, sort_order = ?, updated_at = ? WHERE id = ?'),
     setRowValues: db.prepare('UPDATE db_rows SET "values" = ? WHERE id = ?'),
-    setRowOrder: db.prepare('UPDATE db_rows SET sort_order = ? WHERE id = ?'),
+    touchRowValues: db.prepare('UPDATE db_rows SET "values" = ?, updated_at = ? WHERE id = ?'),
     maxRowOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM db_rows WHERE module_id = ?'),
     deleteRow: db.prepare('DELETE FROM db_rows WHERE id = ?'),
     views: db.prepare('SELECT * FROM db_views WHERE module_id = ? ORDER BY sort_order, rowid'),
@@ -278,6 +335,8 @@ export default function register(router, ctx) {
     maxViewOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) AS m FROM db_views WHERE module_id = ?'),
     deleteView: db.prepare('DELETE FROM db_views WHERE id = ?'),
     countViews: db.prepare('SELECT COUNT(*) AS n FROM db_views WHERE module_id = ?'),
+    stampRows: db.prepare('SELECT COUNT(*) AS n, MAX(updated_at) AS u, TOTAL(sort_order) AS s FROM db_rows WHERE module_id = ?'),
+    stampProps: db.prepare("SELECT group_concat(id || ':' || name || ':' || type || ':' || config || ':' || sort_order, '|') AS p FROM db_properties WHERE module_id = ?"),
   }
 
   const propOut = (r) => ({ ...r, config: parseJson(r.config, {}) })
@@ -305,19 +364,116 @@ export default function register(router, ctx) {
     if (!r) throw httpError(404, 'view_not_found', 'View not found')
     return viewOut(r)
   }
-  const requireBody = (body) => {
-    if (!isObj(body)) throw bad('invalid_body', 'JSON object body required')
-    return body
-  }
   const nameOf = (v, fallback) => {
     if (v == null) return fallback
     if (typeof v !== 'string') throw bad('invalid_name', 'name must be a string')
     return v.trim().slice(0, 200) || fallback
   }
 
+  function uniqueName(moduleId, base) {
+    const props = q.props.all(moduleId)
+    let name = base.slice(0, 200)
+    for (let i = 2; props.some((p) => p.name === name); i++) name = `${base.slice(0, 190)} ${i}`
+    return name
+  }
+
+  /* ---- relations */
+
+  function checkTarget(targetModuleId) {
+    if (!targetModuleId) return
+    const m = q.module.get(targetModuleId)
+    if (!m || m.type !== 'database') throw bad('invalid_config', 'targetModuleId must be an existing database')
+  }
+
+  /** Creates the reverse property for relation prop (a propOut) and links both. Backfills reverse values from prop's values. */
+  function createReverse(prop, { name } = {}) {
+    const target = prop.config.targetModuleId
+    const source = q.module.get(prop.module_id)
+    const id = uuid()
+    const base = name || (target === prop.module_id ? `Related to ${prop.name}` : source?.title || 'Related')
+    const config = { targetModuleId: prop.module_id, twoWay: true, reversePropertyId: prop.id }
+    q.insertProp.run(id, target, uniqueName(target, base), 'relation', JSON.stringify(config), q.maxPropOrder.get(target).m + 1, 200)
+    q.setPropConfig.run(JSON.stringify({ ...prop.config, twoWay: true, reversePropertyId: id }), prop.id)
+    const ts = now()
+    const reverse = propOut(q.propAny.get(id))
+    for (const r of q.rowsWithKey.all(prop.module_id, prop.id)) {
+      const ids = parseJson(r.values, {})[prop.id]
+      if (Array.isArray(ids)) linkReverse(reverse, r.id, ids, [], ts)
+    }
+    return id
+  }
+
+  /** Removes a property's values from every row and deletes it. */
+  function dropProperty(prop) {
+    for (const r of q.rowsWithKey.all(prop.module_id, prop.id)) {
+      const values = parseJson(r.values, {})
+      delete values[prop.id]
+      q.setRowValues.run(JSON.stringify(values), r.id)
+    }
+    q.deleteProp.run(prop.id)
+  }
+
+  /** The linked reverse property of a two-way relation, if it still points back. */
+  function reverseOf(prop) {
+    const id = prop.config?.reversePropertyId
+    if (prop.type !== 'relation' || !prop.config.twoWay || !id) return null
+    const r = q.propAny.get(id)
+    if (!r || r.type !== 'relation') return null
+    const rev = propOut(r)
+    return rev.config.reversePropertyId === prop.id ? rev : null
+  }
+
+  /** Edits one relation value in place (no further sync). fn(ids) -> new ids, or null for no change. */
+  function editRelation(moduleId, rowId, propId, fn, ts) {
+    const r = q.row.get(rowId, moduleId)
+    if (!r) return
+    const values = parseJson(r.values, {})
+    const cur = Array.isArray(values[propId]) ? values[propId] : []
+    const next = fn(cur)
+    if (!next) return
+    if (next.length) values[propId] = next
+    else delete values[propId]
+    q.touchRowValues.run(JSON.stringify(values), ts, rowId)
+  }
+
+  /** For relation prop in row sourceRowId: added/removed target ids get sourceRowId added to/removed from the reverse. */
+  function linkReverse(reverse, sourceRowId, added, removed, ts) {
+    for (const id of added) editRelation(reverse.module_id, id, reverse.id, (ids) => (ids.includes(sourceRowId) ? null : [...ids, sourceRowId]), ts)
+    for (const id of removed) editRelation(reverse.module_id, id, reverse.id, (ids) => (ids.includes(sourceRowId) ? ids.filter((x) => x !== sourceRowId) : null), ts)
+  }
+
+  function syncRelations(props, rowId, before, after, ts) {
+    for (const prop of props.values()) {
+      if (prop.type !== 'relation') continue
+      const a = before[prop.id] || []
+      const b = after[prop.id] || []
+      if (a === b) continue
+      const reverse = reverseOf(prop)
+      if (!reverse) continue
+      const added = b.filter((id) => !a.includes(id))
+      const removed = a.filter((id) => !b.includes(id))
+      if (added.length || removed.length) linkReverse(reverse, rowId, added, removed, ts)
+    }
+  }
+
+  /** Removes deleted row ids from every relation value that points at moduleId. */
+  function removeLinksTo(moduleId, deleted, ts) {
+    for (const prop of q.relationsTo.all(moduleId)) {
+      for (const r of q.rowsWithKey.all(prop.module_id, prop.id)) {
+        const values = parseJson(r.values, {})
+        const ids = values[prop.id]
+        if (!Array.isArray(ids) || !ids.some((id) => deleted.has(id))) continue
+        const next = ids.filter((id) => !deleted.has(id))
+        if (next.length) values[prop.id] = next
+        else delete values[prop.id]
+        q.touchRowValues.run(JSON.stringify(values), ts, r.id)
+      }
+    }
+  }
+
   /* ---- properties */
 
-  function createProperty(moduleId, { name, type, config, width, sort_order } = {}) {
+  function createProperty(moduleId, { name, type, config, width, sort_order, reverseName } = {}) {
     if (!VALUE_TYPES[type]) throw bad('invalid_type', `type must be one of ${Object.keys(VALUE_TYPES).join(', ')}`)
     const props = q.props.all(moduleId)
     if (type === 'title' && props.some((p) => p.type === 'title')) throw bad('duplicate_title', 'A database has exactly one title property')
@@ -325,8 +481,12 @@ export default function register(router, ctx) {
     if (sort_order != null && !Number.isFinite(sort_order)) throw bad('invalid_sort_order', 'sort_order must be a number')
     const id = uuid()
     const cfg = normaliseConfig(type, config)
+    if (type === 'relation') checkTarget(cfg.targetModuleId)
+    const twoWay = type === 'relation' && cfg.twoWay && cfg.targetModuleId
+    if (type === 'relation') cfg.twoWay = false // enabled by createReverse
     q.insertProp.run(id, moduleId, nameOf(name, defaultName(type, props)), type, JSON.stringify(cfg), sort_order ?? q.maxPropOrder.get(moduleId).m + 1,
       Math.round(width ?? (type === 'title' ? 280 : 200)))
+    if (twoWay) createReverse(propOut(q.prop.get(id, moduleId)), { name: typeof reverseName === 'string' ? reverseName.trim() : '' })
     return propOut(q.prop.get(id, moduleId))
   }
 
@@ -338,9 +498,90 @@ export default function register(router, ctx) {
     return name
   }
 
+  function updateProperty(moduleId, propId, body) {
+    const prop = loadProp(moduleId, propId)
+    const type = body.type ?? prop.type
+    if (!VALUE_TYPES[type]) throw bad('invalid_type', 'Unknown property type')
+    if (type !== prop.type && (type === 'title' || prop.type === 'title')) throw bad('title_type_locked', 'The title property type cannot change')
+    if (body.width != null && (!Number.isFinite(body.width) || body.width < 60 || body.width > 2000)) throw bad('invalid_width', 'width must be 60 to 2000')
+    if (body.sort_order != null && !Number.isFinite(body.sort_order)) throw bad('invalid_sort_order', 'sort_order must be a number')
+    const carryOptions = OPTION_TYPES.has(prop.type) && OPTION_TYPES.has(type)
+    let config
+    if (type === prop.type) config = normaliseConfig(type, body.config, prop.config)
+    else config = normaliseConfig(type, body.config ?? (carryOptions ? { options: prop.config.options } : OPTION_TYPES.has(type) ? { options: type === 'status' ? undefined : [] } : {}))
+    if (type === 'status' && prop.type !== 'status' && !body.config && carryOptions) {
+      config.options = config.options.map((o) => ({ ...o, group: o.group || 'todo' }))
+    }
+    const changedRows = []
+    const rows = q.rows.all(moduleId)
+    const oldReverse = reverseOf(prop)
+    let wantReverse = false
+    if (type === 'relation') {
+      const sameTarget = prop.type === 'relation' && prop.config.targetModuleId === config.targetModuleId
+      if (!sameTarget) checkTarget(config.targetModuleId)
+      const targetExists = !!config.targetModuleId && q.module.get(config.targetModuleId)?.type === 'database'
+      if (!targetExists) config.twoWay = false
+      wantReverse = config.twoWay
+      if (sameTarget && oldReverse && wantReverse) {
+        config.reversePropertyId = oldReverse.id // unchanged link
+        wantReverse = false
+      } else config.reversePropertyId = null
+      if (!sameTarget && prop.type === 'relation') {
+        for (const r of rows) {
+          const values = parseJson(r.values, {})
+          if (!(prop.id in values)) continue
+          delete values[prop.id]
+          q.setRowValues.run(JSON.stringify(values), r.id)
+          changedRows.push({ ...rowOut(r), values })
+        }
+      }
+      if (wantReverse) config.twoWay = false
+    }
+    if (oldReverse && config.reversePropertyId !== oldReverse.id) dropProperty(oldReverse)
+    if (type !== prop.type) {
+      for (const r of rows) {
+        const values = parseJson(r.values, {})
+        if (!(prop.id in values)) continue
+        const nv = convertValue(prop.type, type, values[prop.id], prop.config, config, ctx)
+        if (nv === undefined) delete values[prop.id]
+        else values[prop.id] = nv
+        q.setRowValues.run(JSON.stringify(values), r.id)
+        changedRows.push({ ...rowOut(r), values })
+      }
+    } else if (OPTION_TYPES.has(type)) {
+      // Removed options disappear from row values.
+      const valid = new Set(config.options.map((o) => o.id))
+      for (const r of rows) {
+        const values = parseJson(r.values, {})
+        const v = values[prop.id]
+        if (v == null) continue
+        const nv = Array.isArray(v) ? v.filter((id) => valid.has(id)) : valid.has(v) ? v : undefined
+        if (Array.isArray(v) ? nv.length === v.length : nv === v) continue
+        if (nv === undefined || (Array.isArray(nv) && !nv.length)) delete values[prop.id]
+        else values[prop.id] = nv
+        q.setRowValues.run(JSON.stringify(values), r.id)
+        changedRows.push({ ...rowOut(r), values })
+      }
+    }
+    db.prepare('UPDATE db_properties SET name = ?, type = ?, config = ?, width = ?, sort_order = ? WHERE id = ?')
+      .run(nameOf(body.name, prop.name), type, JSON.stringify(config), Math.round(body.width ?? prop.width), body.sort_order ?? prop.sort_order, prop.id)
+    if (wantReverse) createReverse(loadProp(moduleId, prop.id), { name: typeof body.reverseName === 'string' ? body.reverseName.trim() : '' })
+    return { property: loadProp(moduleId, prop.id), rows: changedRows }
+  }
+
+  function deleteProperty(moduleId, propId) {
+    const prop = loadProp(moduleId, propId)
+    if (prop.type === 'title') throw bad('title_required', 'The title property cannot be deleted')
+    const reverse = reverseOf(prop)
+    dropProperty(prop)
+    if (reverse) dropProperty(reverse)
+    return { ok: true, deleted: reverse ? [prop.id, reverse.id] : [prop.id] }
+  }
+
   function createView(moduleId, { name, type, config, sort_order } = {}) {
     if (!VIEW_TYPES.includes(type)) throw bad('invalid_view_type', `type must be one of ${VIEW_TYPES.join(', ')}`)
     if (config != null && !isObj(config)) throw bad('invalid_config', 'config must be an object')
+    if (sort_order != null && !Number.isFinite(sort_order)) throw bad('invalid_sort_order', 'sort_order must be a number')
     const cfg = { ...config }
     const props = q.props.all(moduleId)
     if (type === 'board' && !cfg.group_by) cfg.group_by = (props.find((p) => p.type === 'status') || props.find((p) => p.type === 'select'))?.id ?? null
@@ -375,19 +616,24 @@ export default function register(router, ctx) {
   }
 
   const propMap = (moduleId) => new Map(q.props.all(moduleId).map((r) => [r.id, propOut(r)]))
+  const hasTwoWay = (props) => [...props.values()].some((p) => p.type === 'relation' && p.config.twoWay)
 
   function checkNotes(notes) {
     if (notes != null && (typeof notes !== 'string' || notes.length > MAX_TEXT * 10)) throw bad('invalid_notes', 'notes must be text')
   }
 
-  function insertRow(moduleId, props, input, order, ts) {
+  function insertRow(moduleId, props, input, order, ts, { createdAt, updatedAt } = {}) {
     if (!isObj(input)) throw bad('invalid_row', 'each row must be an object')
     checkNotes(input.notes)
     if (input.sort_order != null && !Number.isFinite(input.sort_order)) throw bad('invalid_sort_order', 'sort_order must be a number')
     const values = cleanValues(moduleId, input.values, props)
     const id = uuid()
-    q.insertRow.run(id, moduleId, input.sort_order ?? order, JSON.stringify(values), input.notes ?? '', ts, ts)
-    return { id, module_id: moduleId, sort_order: input.sort_order ?? order, values, notes: input.notes ?? '', created_at: ts, updated_at: ts }
+    q.insertRow.run(id, moduleId, input.sort_order ?? order, JSON.stringify(values), input.notes ?? '', createdAt ?? ts, updatedAt ?? ts)
+    if (hasTwoWay(props)) {
+      syncRelations(props, id, {}, values, ts)
+      return rowOut(q.row.get(id, moduleId))
+    }
+    return { id, module_id: moduleId, sort_order: input.sort_order ?? order, values, notes: input.notes ?? '', created_at: createdAt ?? ts, updated_at: updatedAt ?? ts }
   }
 
   function patchRow(moduleId, props, id, input, ts) {
@@ -398,13 +644,21 @@ export default function register(router, ctx) {
     const values = cleanValues(moduleId, input.values, props, row.values)
     const out = { ...row, values, notes: input.notes ?? row.notes, sort_order: input.sort_order ?? row.sort_order, updated_at: ts }
     q.updateRow.run(JSON.stringify(values), out.notes, out.sort_order, ts, id)
+    if (input.values != null && hasTwoWay(props)) {
+      syncRelations(props, id, row.values, values, ts)
+      return loadRow(moduleId, id) // a same-database link may have changed this row too
+    }
     return out
   }
 
-  function deleteRow(moduleId, id) {
-    loadRow(moduleId, id)
-    q.deleteRow.run(id)
-    ctx.attachments.removeFor({ moduleId, pageId: id })
+  function deleteRows(moduleId, ids) {
+    if (!ids.length) return
+    for (const id of ids) {
+      loadRow(moduleId, id)
+      q.deleteRow.run(id)
+      ctx.attachments.removeFor({ moduleId, pageId: id })
+    }
+    removeLinksTo(moduleId, new Set(ids), now())
   }
 
   // Reassigns the existing sort_order slots of the given ids in the given order.
@@ -418,12 +672,16 @@ export default function register(router, ctx) {
     return ids.map((id, i) => ({ id, sort_order: slots[i] }))
   }
 
-  /* ---- endpoints */
+  /** Cheap change fingerprint for polling clients (rows, properties and title). */
+  function stamp(moduleId) {
+    const m = loadModule(moduleId)
+    const r = q.stampRows.get(moduleId)
+    const p = q.stampProps.get(moduleId)
+    return crypto.createHash('sha1').update(`${m.title}|${r.n}|${r.u}|${r.s}|${p.p}`).digest('hex')
+  }
 
-  const base = '/api/databases/:moduleId'
-
-  router.get(base, ({ params }) => {
-    const module = loadModule(params.moduleId)
+  function snapshot(moduleId) {
+    const module = loadModule(moduleId)
     transaction(db, () => ensureInitialised(module.id))
     return {
       module: { ...module, data: parseJson(module.data, {}) },
@@ -431,7 +689,31 @@ export default function register(router, ctx) {
       rows: q.rows.all(module.id).map(rowOut),
       views: q.views.all(module.id).map(viewOut),
     }
-  })
+  }
+
+  return {
+    q, db, propOut, rowOut, viewOut, loadModule, loadProp, loadRow, loadView, nameOf, uniqueName, propMap,
+    createProperty, updateProperty, deleteProperty, createView, ensureInitialised, createReverse, reverseOf,
+    cleanValues, insertRow, patchRow, deleteRows, reorder, stamp, snapshot, checkTarget,
+  }
+}
+
+/* ------------------------------------------------------------------ routes */
+
+export default function register(router, ctx) {
+  const svc = databaseService(ctx)
+  const { db } = ctx
+  const { q, loadModule, loadProp, loadRow, loadView, nameOf, propMap, createProperty, createView, ensureInitialised, insertRow, patchRow } = svc
+  const requireBody = (body) => {
+    if (!isObj(body)) throw bad('invalid_body', 'JSON object body required')
+    return body
+  }
+
+  const base = '/api/databases/:moduleId'
+
+  router.get(base, ({ params }) => svc.snapshot(params.moduleId))
+
+  router.get(`${base}/stamp`, ({ params }) => ({ stamp: svc.stamp(params.moduleId) }))
 
   router.post(`${base}/properties`, ({ params, body, res }) => {
     loadModule(params.moduleId)
@@ -442,73 +724,18 @@ export default function register(router, ctx) {
 
   router.post(`${base}/properties/reorder`, ({ params, body }) => {
     loadModule(params.moduleId)
-    return transaction(db, () => reorder('db_properties', params.moduleId, requireBody(body).ids, loadProp))
+    return transaction(db, () => svc.reorder('db_properties', params.moduleId, requireBody(body).ids, loadProp))
   })
 
   router.patch(`${base}/properties/:propId`, ({ params, body }) => {
     loadModule(params.moduleId)
     requireBody(body)
-    return transaction(db, () => {
-      const prop = loadProp(params.moduleId, params.propId)
-      const type = body.type ?? prop.type
-      if (!VALUE_TYPES[type]) throw bad('invalid_type', 'Unknown property type')
-      if (type !== prop.type && (type === 'title' || prop.type === 'title')) throw bad('title_type_locked', 'The title property type cannot change')
-      if (body.width != null && (!Number.isFinite(body.width) || body.width < 60 || body.width > 2000)) throw bad('invalid_width', 'width must be 60 to 2000')
-      if (body.sort_order != null && !Number.isFinite(body.sort_order)) throw bad('invalid_sort_order', 'sort_order must be a number')
-      const carryOptions = OPTION_TYPES.has(prop.type) && OPTION_TYPES.has(type)
-      let config
-      if (type === prop.type) config = normaliseConfig(type, body.config, prop.config)
-      else config = normaliseConfig(type, body.config ?? (carryOptions ? { options: prop.config.options } : OPTION_TYPES.has(type) ? { options: type === 'status' ? undefined : [] } : {}))
-      if (type === 'status' && prop.type !== 'status' && !body.config && carryOptions) {
-        config.options = config.options.map((o) => ({ ...o, group: o.group || 'todo' }))
-      }
-      const changedRows = []
-      const rows = q.rows.all(params.moduleId)
-      if (type !== prop.type) {
-        for (const r of rows) {
-          const values = parseJson(r.values, {})
-          if (!(prop.id in values)) continue
-          const nv = convertValue(prop.type, type, values[prop.id], prop.config, config, ctx)
-          if (nv === undefined) delete values[prop.id]
-          else values[prop.id] = nv
-          q.setRowValues.run(JSON.stringify(values), r.id)
-          changedRows.push({ ...rowOut(r), values })
-        }
-      } else if (OPTION_TYPES.has(type)) {
-        // Removed options disappear from row values.
-        const valid = new Set(config.options.map((o) => o.id))
-        for (const r of rows) {
-          const values = parseJson(r.values, {})
-          const v = values[prop.id]
-          if (v == null) continue
-          const nv = Array.isArray(v) ? v.filter((id) => valid.has(id)) : valid.has(v) ? v : undefined
-          if (Array.isArray(v) ? nv.length === v.length : nv === v) continue
-          if (nv === undefined || (Array.isArray(nv) && !nv.length)) delete values[prop.id]
-          else values[prop.id] = nv
-          q.setRowValues.run(JSON.stringify(values), r.id)
-          changedRows.push({ ...rowOut(r), values })
-        }
-      }
-      db.prepare('UPDATE db_properties SET name = ?, type = ?, config = ?, width = ?, sort_order = ? WHERE id = ?')
-        .run(nameOf(body.name, prop.name), type, JSON.stringify(config), Math.round(body.width ?? prop.width), body.sort_order ?? prop.sort_order, prop.id)
-      return { property: loadProp(params.moduleId, prop.id), rows: changedRows }
-    })
+    return transaction(db, () => svc.updateProperty(params.moduleId, params.propId, body))
   })
 
   router.delete(`${base}/properties/:propId`, ({ params }) => {
     loadModule(params.moduleId)
-    return transaction(db, () => {
-      const prop = loadProp(params.moduleId, params.propId)
-      if (prop.type === 'title') throw bad('title_required', 'The title property cannot be deleted')
-      for (const r of q.rows.all(params.moduleId)) {
-        const values = parseJson(r.values, {})
-        if (!(prop.id in values)) continue
-        delete values[prop.id]
-        q.setRowValues.run(JSON.stringify(values), r.id)
-      }
-      q.deleteProp.run(prop.id)
-      return { ok: true }
-    })
+    return transaction(db, () => svc.deleteProperty(params.moduleId, params.propId))
   })
 
   router.post(`${base}/rows`, ({ params, body, res }) => {
@@ -533,14 +760,14 @@ export default function register(router, ctx) {
       let order = q.maxRowOrder.get(params.moduleId).m
       const created = create.map((input) => insertRow(params.moduleId, props, input, ++order, ts))
       const updated = update.map((input) => patchRow(params.moduleId, props, input?.id, input, ts))
-      for (const id of del) deleteRow(params.moduleId, id)
+      svc.deleteRows(params.moduleId, del)
       return { created, updated, deleted: del.length }
     })
   })
 
   router.post(`${base}/rows/reorder`, ({ params, body }) => {
     loadModule(params.moduleId)
-    return transaction(db, () => reorder('db_rows', params.moduleId, requireBody(body).ids, loadRow))
+    return transaction(db, () => svc.reorder('db_rows', params.moduleId, requireBody(body).ids, loadRow))
   })
 
   router.get(`${base}/rows/:rowId`, ({ params }) => {
@@ -555,7 +782,7 @@ export default function register(router, ctx) {
 
   router.delete(`${base}/rows/:rowId`, ({ params }) => {
     loadModule(params.moduleId)
-    transaction(db, () => deleteRow(params.moduleId, params.rowId))
+    transaction(db, () => svc.deleteRows(params.moduleId, [params.rowId]))
     return { ok: true }
   })
 
@@ -568,7 +795,7 @@ export default function register(router, ctx) {
 
   router.post(`${base}/views/reorder`, ({ params, body }) => {
     loadModule(params.moduleId)
-    return transaction(db, () => reorder('db_views', params.moduleId, requireBody(body).ids, loadView))
+    return transaction(db, () => svc.reorder('db_views', params.moduleId, requireBody(body).ids, loadView))
   })
 
   router.patch(`${base}/views/:viewId`, ({ params, body }) => {
