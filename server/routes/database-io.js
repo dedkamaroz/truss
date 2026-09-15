@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import { httpError } from '../http.js'
 import { transaction } from '../db.js'
 import { databaseService, VALUE_TYPES, VIEW_TYPES } from './database.js'
-import { MAX_ICON } from './modules.js'
+import { MAX_ICON, uniqueTitle } from './modules.js'
 
 const bad = (code, message) => httpError(400, code, message)
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
@@ -49,7 +49,7 @@ export default function register(router, ctx) {
   function importDatabase(d, properties, rows, views) {
     const moduleId = crypto.randomUUID()
     const ts = new Date().toISOString()
-    insertModule.run(moduleId, d.title?.trim().slice(0, 500) || 'Imported database', d.icon || null, ts, ts)
+    insertModule.run(moduleId, uniqueTitle(db, d.title?.trim().slice(0, 500) || 'Imported database'), d.icon || null, ts, ts)
     const srcId = typeof d.id === 'string' ? d.id : null
     const propIds = new Map() // file property id -> new id
     const srcById = new Map(properties.filter((p) => typeof p.id === 'string').map((p) => [p.id, p]))

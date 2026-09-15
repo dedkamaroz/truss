@@ -163,21 +163,10 @@ function applyModuleUpdate(m) {
   }
 }
 
-/**
- * "Monthly budget", then "Monthly budget 2", ... so modules made from the picker don't collide in the sidebar or in
- * [Workbook]Sheet!A1 references. Best effort: renames and direct API calls can still create duplicate titles.
- */
-function uniqueTitle(base) {
-  const taken = new Set(state.modules.map((m) => m.title.toLowerCase()))
-  let title = base
-  for (let n = 2; taken.has(title.toLowerCase()); n++) title = `${base} ${n}`
-  return title
-}
-
 async function createModule(type, template = 'blank') {
   const tpl = state.templates?.find((t) => t.type === type && t.key === template)
-  const title = uniqueTitle(template === 'blank' || !tpl ? 'Untitled' : tpl.name)
-  const m = await api.post('/api/modules', { type, template, title })
+  // The server makes the title unique ("Monthly budget 2").
+  const m = await api.post('/api/modules', { type, template, title: template === 'blank' || !tpl ? undefined : tpl.name })
   upsertModule(m)
   renderSidebarModules()
   changed('create', m)
@@ -814,7 +803,15 @@ function buildPageHeader(m) {
     }
     if (value === lastSaved) return
     lastSaved = value
-    await saveModule(m.id, { title: value })
+    const saved = await saveModule(m.id, { title: value })
+    // The server may add a suffix to keep titles unique ("Budget" -> "Budget 2").
+    if (saved && saved.title !== value) {
+      lastSaved = saved.title
+      if (document.activeElement !== title) {
+        title.value = saved.title
+        toast(`"${value}" is already taken, so this was saved as "${saved.title}"`)
+      }
+    }
   }
   const live = ui.debounce(commit, 600)
   const mirror = () => {

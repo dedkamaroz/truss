@@ -4,6 +4,18 @@ import { transaction, MODULE_TYPES } from '../db.js'
 
 // An emoji (ZWJ sequences included) or an icon name; long text would break the sidebar and header layout.
 export const MAX_ICON = 32
+export const MAX_TITLE = 500
+
+/**
+ * Module titles are unique (case-insensitive) so the sidebar and [Workbook]Sheet!A1 references are unambiguous.
+ * Returns base, or "base 2", "base 3", ... Call inside the write transaction.
+ */
+export function uniqueTitle(db, base, exceptId = null) {
+  const taken = new Set(db.prepare('SELECT title FROM modules WHERE id IS NOT ?').all(exceptId).map((r) => r.title.toLowerCase()))
+  let title = base
+  for (let n = 2; taken.has(title.toLowerCase()); n++) title = `${base} ${n}`
+  return title
+}
 
 export function rowToModule(row) {
   if (!row) return null
@@ -47,13 +59,13 @@ export default function register(router, ctx) {
     if (!MODULE_TYPES.includes(type)) throw httpError(400, 'invalid_type', `type must be one of ${MODULE_TYPES.join(', ')}`)
     const tpl = ctx.templates.get(`${type}:${template}`)
     if (!tpl) throw httpError(400, 'unknown_template', `No "${template}" template for ${type}`)
-    if (title != null && typeof title !== 'string') throw httpError(400, 'invalid_title', 'title must be a string')
+    if (title != null && (typeof title !== 'string' || title.length > MAX_TITLE)) throw httpError(400, 'invalid_title', `title must be a string of at most ${MAX_TITLE} characters`)
     if (icon != null && (typeof icon !== 'string' || icon.length > MAX_ICON)) throw httpError(400, 'invalid_icon', `icon must be a string of at most ${MAX_ICON} characters`)
 
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
     const created = transaction(db, () => {
-      q.insert.run(id, type, title?.trim() || 'Untitled', icon || null, q.maxOrder.get().m + 1, now, now)
+      q.insert.run(id, type, uniqueTitle(db, title?.trim() || 'Untitled'), icon || null, q.maxOrder.get().m + 1, now, now)
       tpl.apply(db, id, rowToModule(q.get.get(id)))
       return rowToModule(q.get.get(id))
     })
@@ -63,14 +75,16 @@ export default function register(router, ctx) {
 
   router.get('/api/modules/:id', ({ params }) => rowToModule(load(params.id)))
 
-  router.patch('/api/modules/:id', ({ params, body }) => {
-    load(params.id)
+  router.patch('/api/modules/:id', ({ params, body }) => transaction(db, () => {
+    const current = load(params.id)
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw httpError(400, 'invalid_body', 'JSON object body required')
     const sets = []
     const args = []
     if ('title' in body) {
-      if (typeof body.title !== 'string') throw httpError(400, 'invalid_title', 'title must be a string')
-      sets.push('title = ?'), args.push(body.title.trim() || 'Untitled')
+      if (typeof body.title !== 'string' || body.title.length > MAX_TITLE) throw httpError(400, 'invalid_title', `title must be a string of at most ${MAX_TITLE} characters`)
+      const wanted = body.title.trim() || 'Untitled'
+      // Resaving the current title keeps it, even if it duplicates a title saved before uniqueness was enforced.
+      sets.push('title = ?'), args.push(wanted === current.title ? wanted : uniqueTitle(db, wanted, params.id))
     }
     if ('icon' in body) {
       if (body.icon !== null && (typeof body.icon !== 'string' || body.icon.length > MAX_ICON)) throw httpError(400, 'invalid_icon', `icon must be null or a string of at most ${MAX_ICON} characters`)
@@ -89,7 +103,7 @@ export default function register(router, ctx) {
       db.prepare(`UPDATE modules SET ${sets.join(', ')} WHERE id = ?`).run(...args, params.id)
     }
     return rowToModule(q.get.get(params.id))
-  })
+  }))
 
   router.post('/api/modules/:id/archive', ({ params }) => {
     const row = load(params.id)

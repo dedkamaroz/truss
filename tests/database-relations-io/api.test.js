@@ -42,6 +42,29 @@ describe('two-way relations', () => {
     await ok('DELETE', `/api/modules/${projects.m.id}`)
   })
 
+  test('module titles are unique (case-insensitive) on create, rename and import', async () => {
+    const base = `Budget ${Date.now()}`
+    const a = await ok('POST', '/api/modules', { type: 'sheet', title: base })
+    const b = await ok('POST', '/api/modules', { type: 'database', title: base.toUpperCase() })
+    assert.equal(a.title, base)
+    assert.equal(b.title, `${base.toUpperCase()} 2`)
+    assert.equal((await ok('PATCH', `/api/modules/${a.id}`, { title: base })).title, base, 'renaming to its own title keeps it')
+    assert.equal((await ok('PATCH', `/api/modules/${b.id}`, { title: base })).title, `${base} 2`)
+    const imp = await ok('POST', '/api/databases/import', { truss: 1, database: { title: base, properties: [{ id: 't', name: 'Name', type: 'title' }], rows: [] } })
+    assert.equal(imp.module.title, `${base} 3`)
+    for (const id of [a.id, b.id, imp.module.id]) await ok('DELETE', `/api/modules/${id}`)
+
+    // a duplicate saved before uniqueness was enforced keeps its title when resaved with other fields
+    const legacy = `Legacy ${Date.now()}`
+    const c = await ok('POST', '/api/modules', { type: 'sheet', title: legacy })
+    const d = await ok('POST', '/api/modules', { type: 'sheet', title: 'placeholder' })
+    t.s.ctx.db.prepare('UPDATE modules SET title = ? WHERE id = ?').run(legacy, d.id)
+    const resaved = await ok('PATCH', `/api/modules/${d.id}`, { title: legacy, icon: '📒' })
+    assert.equal(resaved.title, legacy)
+    await fail('PATCH', `/api/modules/${d.id}`, { title: 'x'.repeat(501) })
+    for (const id of [c.id, d.id]) await ok('DELETE', `/api/modules/${id}`)
+  })
+
   test('module icons longer than 32 characters are rejected on create, patch and import', async () => {
     const long = 'x'.repeat(33)
     await fail('POST', '/api/modules', { type: 'database', icon: long })
@@ -204,7 +227,7 @@ describe('JSON import', () => {
 
     const imported = await ok('POST', '/api/databases/import', JSON.parse(JSON.stringify(doc)), 201)
     const after = await ok('GET', `/api/databases/${imported.module.id}`)
-    assert.equal(after.module.title, 'Source')
+    assert.equal(after.module.title, 'Source 2', 'the source still exists, so the copy gets a unique title')
     const idMap = new Map(before.properties.map((p) => [p.id, after.properties.find((q) => q.name === p.name)?.id]))
     assert.deepEqual(after.properties.map((p) => [p.name, p.type]), before.properties.map((p) => [p.name, p.type]))
     const rowMap = new Map(before.rows.map((r, i) => [r.id, after.rows[i].id]))

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { watch, boot, apiCall, shot } from './helpers.js'
+import { watch, boot, apiCall, shot, createModule, uid } from './helpers.js'
 
 test('boots with no module files: no console errors or CSP violations, creates each type via the template picker', async ({ page }) => {
   const w = await watch(page)
@@ -63,4 +63,25 @@ test('unknown routes and missing modules render friendly states', async ({ page 
   await expect(page.locator('.empty-state-title')).toHaveText('Module not found')
   // the deliberate 404 lookup is the only console error allowed
   expect(w.errors.filter((e) => !e.includes('404'))).toEqual([])
+})
+
+test('renaming a module to a title that is already taken shows the unique title the server saved', async ({ page }) => {
+  const w = await watch(page)
+  await boot(page)
+  const name = `Budget ${uid()}`
+  await createModule(page, { type: 'sheet', title: name })
+  const other = await createModule(page, { type: 'notebook', title: `Notes ${uid()}` })
+  await page.goto(`/#/m/${other.id}`)
+  await page.reload() // API-created modules reach the sidebar on reload
+  const header = page.locator('.page-title')
+  await expect(header).toHaveValue(other.title)
+  // pause while typing so the debounced live save lands while the header still has focus, then leave the field
+  const patched = page.waitForResponse((r) => r.url().endsWith(`/api/modules/${other.id}`) && r.request().method() === 'PATCH')
+  await header.fill(name)
+  await patched
+  await header.press('Enter')
+  await expect(header).toHaveValue(`${name} 2`)
+  await expect(page.locator(`.sidebar-item[data-id="${other.id}"] .sidebar-item-title`)).toHaveText(`${name} 2`)
+  expect((await apiCall(page, 'GET', `/api/modules/${other.id}`)).body.title).toBe(`${name} 2`)
+  expect(w.errors).toEqual([])
 })
