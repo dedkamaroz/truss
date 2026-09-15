@@ -15,7 +15,7 @@
     "database": { "wave": 3, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
     "sheets": { "wave": 3, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
     "notebooks": { "wave": 3, "status": "passed", "attempts": 2, "wastedAttempts": 0, "merged": true },
-    "database-relations-io": { "wave": 4, "status": "pending" },
-    "scripts-ui": { "wave": 4, "status": "pending" }
+    "database-relations-io": { "wave": 4, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
+    "scripts-ui": { "wave": 4, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true }
   }
 }
