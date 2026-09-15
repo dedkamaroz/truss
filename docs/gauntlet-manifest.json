@@ -8,8 +8,8 @@
   "spawnCeiling": 118,
   "model": "opus",
   "pieces": {
-    "server-core": { "wave": 1, "status": "pending" },
-    "formula-engine": { "wave": 1, "status": "pending" },
+    "server-core": { "wave": 1, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
+    "formula-engine": { "wave": 1, "status": "passed", "attempts": 1, "wastedAttempts": 0, "merged": true },
     "ui-shell": { "wave": 2, "status": "pending" },
     "scripts-server": { "wave": 2, "status": "pending" },
     "database": { "wave": 3, "status": "pending" },
