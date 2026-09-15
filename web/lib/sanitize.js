@@ -1,0 +1,58 @@
+// Allowlist HTML sanitiser for user rich text.
+// Parses with DOMParser (an inert document: no scripts run, no resources load), then rebuilds
+// only allowed elements and attributes. Anything else is unwrapped to its text.
+
+const ALLOWED = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'code', 'a', 'br', 'span'])
+// Elements whose content is never meaningful text and must be dropped entirely.
+const DROP = new Set(['script', 'style', 'template', 'iframe', 'object', 'embed', 'noscript', 'noembed', 'noframes', 'textarea', 'title', 'svg', 'head', 'xmp', 'plaintext'])
+const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+
+export function safeHref(href) {
+  // Browsers ignore ASCII whitespace and control characters inside a scheme, so strip them first.
+  const cleaned = String(href ?? '').replace(/[\u0000-\u0020\u007f-\u009f]/g, '')
+  const m = /^([a-z][a-z0-9+.-]*):/i.exec(cleaned)
+  if (!m || !SAFE_PROTOCOLS.has(m[1].toLowerCase() + ':')) return null
+  return String(href).trim()
+}
+
+function clean(node, out, doc) {
+  for (const child of node.childNodes) {
+    if (child.nodeType === 3) {
+      out.appendChild(doc.createTextNode(child.data))
+      continue
+    }
+    if (child.nodeType !== 1) continue
+    const tag = child.localName
+    if (DROP.has(tag)) continue
+    if (!ALLOWED.has(tag) || child.namespaceURI !== 'http://www.w3.org/1999/xhtml') {
+      clean(child, out, doc)
+      continue
+    }
+    const el = doc.createElement(tag)
+    if (tag === 'a') {
+      const href = safeHref(child.getAttribute('href'))
+      if (href) {
+        el.setAttribute('href', href)
+        el.setAttribute('rel', 'noopener noreferrer')
+        el.setAttribute('target', '_blank')
+      }
+    } else if (tag === 'span') {
+      for (const attr of child.attributes) {
+        if (/^data-[a-z0-9_.-]+$/i.test(attr.name)) el.setAttribute(attr.name, attr.value)
+      }
+    }
+    if (tag !== 'br') clean(child, el, doc)
+    out.appendChild(el)
+  }
+}
+
+export function sanitizeHtml(html) {
+  if (html == null || html === '') return ''
+  const src = new DOMParser().parseFromString('<!doctype html><body>' + String(html), 'text/html')
+  const doc = document.implementation.createHTMLDocument('')
+  const root = doc.createElement('div')
+  clean(src.body, root, doc)
+  return root.innerHTML
+}
+
+export default sanitizeHtml
