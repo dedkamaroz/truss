@@ -602,6 +602,22 @@ html.db-dragging * {
   box-shadow: inset 0 0 0 1px var(--color-focus-ring);
 }
 
+/* drag-selected range: a tint layered over the row's own background (hover included) */
+.db-tr .db-td.is-in-range,
+.db-tr.is-row-selected .db-gutter,
+.db-tr.is-row-selected .db-td-fill {
+  background-image: linear-gradient(var(--color-selected), var(--color-selected));
+}
+
+/* dragging across cells selects them, not their text */
+.db-tbody {
+  user-select: none;
+}
+
+.db-inline-input {
+  user-select: text;
+}
+
 .db-td.is-editing {
   overflow: visible;
   z-index: 3;

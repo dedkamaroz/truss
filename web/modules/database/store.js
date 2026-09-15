@@ -188,6 +188,39 @@ export function createStore(api, moduleId) {
       }
     },
 
+    /** Clears propIds on every row in rowIds with one batch request. */
+    async clearValues(rowIds, propIds) {
+      const rows = rowIds.map((id) => s.rowById.get(id)).filter((r) => r && propIds.some((p) => p in r.values))
+      if (!rows.length) return
+      const before = new Map(rows.map((r) => [r, { ...r.values }]))
+      const values = Object.fromEntries(propIds.map((p) => [p, null]))
+      for (const r of rows) {
+        for (const p of propIds) delete r.values[p]
+        touch(r)
+      }
+      emit({ kind: 'rows' })
+      try {
+        const res = await api.post(`${base}/rows/batch`, { update: rows.map((r) => ({ id: r.id, values })) })
+        for (const saved of res.updated) {
+          const local = s.rowById.get(saved.id)
+          if (local) local.updated_at = saved.updated_at
+        }
+        // two-way links changed on the other side too
+        const linked = propIds.map((id) => s.propById.get(id)).filter((p) => p && isRelation(p) && p.config?.twoWay)
+        if (linked.some((p) => p.config.targetModuleId === moduleId)) await s.reload().catch(() => {})
+        for (const p of linked) if (p.config.targetModuleId !== moduleId) s.refreshRelated(p.config.targetModuleId)
+      } catch (err) {
+        // restore only cells nothing else has set since, so a concurrent edit survives
+        for (const [r, v] of before) {
+          for (const p of propIds) if (p in v && !(p in r.values)) r.values[p] = v[p]
+          touch(r)
+        }
+        emit({ kind: 'rows' })
+        fail(err, 'Could not clear the cells')
+        throw err
+      }
+    },
+
     async updateNotes(rowId, notes) {
       const row = s.rowById.get(rowId)
       if (!row) return
@@ -251,6 +284,7 @@ export function createStore(api, moduleId) {
         sortRowsByOrder()
         emit({ kind: 'rows' })
         fail(err, 'Could not delete')
+        throw err
       }
     },
 

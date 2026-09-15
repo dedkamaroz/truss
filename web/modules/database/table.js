@@ -2,7 +2,8 @@
 
 import { h } from '../../lib/ui.js'
 import { icon } from '../../lib/icons.js'
-import { typeOf, propIcon, renderValue, startEdit, groupLabel, alignOf, EMPTY_GROUP } from './types.js'
+import { typeOf, propIcon, renderValue, startEdit, groupLabel, alignOf, exportText, EMPTY_GROUP } from './types.js'
+import { stringify, neutraliseFormula } from '../../lib/csv.js'
 import { viewRows, groupRows, isGroupable, groupValue } from './query.js'
 import { createVirtual } from './virtual.js'
 import { dragGesture } from './drag.js'
@@ -24,8 +25,11 @@ export function createTableView(host, ctx) {
 
   let cols = [] // visible properties
   let colsSig = ''
-  let sel = null // { rowId, propId }
+  let sel = null // { rowId, propId }: the cursor cell, and the moving end of a range
+  let anchor = null // { rowId, propId }: the fixed end of a range, null for a single cell
+  let rowMode = false // the range covers whole rows (dragged in the gutter)
   let editing = null // { rowId, propId }
+  let endDrag = null // stops an in-progress drag selection
   let raf = 0
 
   const virtual = createVirtual({
@@ -194,7 +198,7 @@ export function createTableView(host, ctx) {
       if (td.classList.contains('is-editing')) return // inline input lives in this cell
       fillCell(td, row, p)
     })
-    if (sel?.rowId === row.id) paintSelection()
+    paintRow(el, range())
   }
 
   function fillCell(td, row, p) {
@@ -243,14 +247,46 @@ export function createTableView(host, ctx) {
 
   const navRows = () => virtual.items.filter((it) => it.kind === 'row')
 
-  function paintSelection() {
-    for (const td of body.querySelectorAll('.db-td.is-selected')) td.classList.remove('is-selected')
-    if (!sel) return
-    body.querySelector(`.db-tr[data-row-id="${sel.rowId}"] .db-td[data-prop="${sel.propId}"]`)?.classList.add('is-selected')
+  /** Item and column index bounds of the selection, or null. multi: more than one cell. */
+  function range() {
+    if (!sel) return null
+    const a = anchor || sel
+    const ra = virtual.indexOf(a.rowId)
+    const rb = virtual.indexOf(sel.rowId)
+    const ca = cols.findIndex((p) => p.id === a.propId)
+    const cb = cols.findIndex((p) => p.id === sel.propId)
+    if (ra < 0 || rb < 0 || ca < 0 || cb < 0) return null
+    const r = { r0: Math.min(ra, rb), r1: Math.max(ra, rb), c0: Math.min(ca, cb), c1: Math.max(ca, cb), cursor: rb, cursorCol: cb }
+    r.multi = r.r0 !== r.r1 || r.c0 !== r.c1
+    return r
   }
 
-  function select(rowId, propId, reveal = true) {
+  const rangeRows = (r) => virtual.items.slice(r.r0, r.r1 + 1).filter((it) => it.kind === 'row').map((it) => it.row)
+  const rangeCols = (r) => cols.slice(r.c0, r.c1 + 1)
+
+  function paintRow(tr, r) {
+    const i = virtual.indexOf(tr.dataset.rowId)
+    const inRows = !!r && i >= r.r0 && i <= r.r1
+    tr.classList.toggle('is-row-selected', inRows && rowMode)
+    cols.forEach((p, ci) => {
+      const td = tr.children[ci + 1]
+      if (!td) return
+      const inRange = inRows && ci >= r.c0 && ci <= r.c1
+      td.classList.toggle('is-in-range', inRange && r.multi)
+      td.classList.toggle('is-selected', inRange && !rowMode && i === r.cursor && ci === r.cursorCol)
+    })
+  }
+
+  function paintSelection() {
+    const r = range()
+    for (const tr of body.querySelectorAll('.db-tr')) paintRow(tr, r)
+  }
+
+  function select(rowId, propId, reveal = true, extend = false) {
+    if (extend && sel) anchor = anchor || sel
+    else (anchor = null, rowMode = false)
     sel = rowId && propId ? { rowId, propId } : null
+    if (!sel) anchor = null
     if (sel && reveal) {
       virtual.reveal(virtual.indexOf(rowId), HEAD_H)
       virtual.render()
@@ -293,7 +329,7 @@ export function createTableView(host, ctx) {
     if (!handle && typeOf(prop).edit === 'toggle') editing = null
   }
 
-  function moveSel(dx, dy, wrap = false) {
+  function moveSel(dx, dy, wrap = false, extend = false) {
     const rows = navRows()
     if (!rows.length || !cols.length) return
     let ri = sel ? rows.findIndex((it) => it.row.id === sel.rowId) : 0
@@ -307,7 +343,7 @@ export function createTableView(host, ctx) {
     if (wrap && (ri < 0 || ri >= rows.length)) return
     ri = Math.max(0, Math.min(rows.length - 1, ri))
     ci = Math.max(0, Math.min(cols.length - 1, ci))
-    select(rows[ri].row.id, cols[ci].id)
+    select(rows[ri].row.id, cols[ci].id, true, extend)
   }
 
   scroller.addEventListener('keydown', (e) => {
@@ -315,7 +351,7 @@ export function createTableView(host, ctx) {
     const k = e.key
     if (k === 'ArrowDown' || k === 'ArrowUp' || k === 'ArrowLeft' || k === 'ArrowRight') {
       e.preventDefault()
-      moveSel(k === 'ArrowRight' ? 1 : k === 'ArrowLeft' ? -1 : 0, k === 'ArrowDown' ? 1 : k === 'ArrowUp' ? -1 : 0)
+      moveSel(k === 'ArrowRight' ? 1 : k === 'ArrowLeft' ? -1 : 0, k === 'ArrowDown' ? 1 : k === 'ArrowUp' ? -1 : 0, false, e.shiftKey)
     } else if (k === 'Tab' && sel) {
       e.preventDefault()
       moveSel(e.shiftKey ? -1 : 1, 0, true)
@@ -329,6 +365,11 @@ export function createTableView(host, ctx) {
     } else if (k === 'Escape' && sel) {
       e.preventDefault()
       select(null)
+    } else if ((k === 'Delete' || k === 'Backspace') && range()?.multi) {
+      e.preventDefault()
+      const r = range()
+      const props = rangeCols(r).filter((p) => !typeOf(p).readOnly).map((p) => p.id)
+      if (props.length) store.clearValues(rangeRows(r).map((row) => row.id), props).catch(() => {})
     } else if ((k === 'Delete' || k === 'Backspace') && sel) {
       const p = store.propById.get(sel.propId)
       if (p && !typeOf(p).readOnly) {
@@ -370,22 +411,127 @@ export function createTableView(host, ctx) {
     if (!tr) return
     const rowId = tr.dataset.rowId
     if (t.closest('.db-open-btn')) return ctx.openRow(rowId)
-    if (t.closest('.db-row-menu')) return ctx.rowMenu(t.closest('.db-row-menu'), rowId)
+    if (t.closest('.db-row-menu')) return ctx.rowMenu(t.closest('.db-row-menu'), rowId, { rowIds: selectedRowIds(rowId) })
     const td = t.closest('.db-td')
     if (!td) return
     scroller.focus({ preventScroll: true })
     const prop = store.propById.get(td.dataset.prop)
     if (!prop) return
+    if (e.shiftKey && sel) return select(rowId, prop.id, false, true)
     if (typeOf(prop).readOnly) return select(rowId, prop.id, false)
     edit(rowId, prop.id)
   })
+
+  /** Ids of the selected rows when whole rows (from the gutter) are selected, several of them including rowId, else null. */
+  function selectedRowIds(rowId) {
+    const r = rowMode && range()
+    const ids = r ? rangeRows(r).map((row) => row.id) : []
+    return ids.length > 1 && ids.includes(rowId) ? ids : null
+  }
 
   body.addEventListener('contextmenu', (e) => {
     const tr = e.target.closest('.db-tr')
     if (!tr) return
     e.preventDefault()
-    ctx.rowMenu({ getBoundingClientRect: () => new DOMRect(e.clientX, e.clientY, 0, 0) }, tr.dataset.rowId)
+    ctx.rowMenu({ getBoundingClientRect: () => new DOMRect(e.clientX, e.clientY, 0, 0) }, tr.dataset.rowId, { rowIds: selectedRowIds(tr.dataset.rowId) })
   })
+
+  /* ---- drag to select: from a cell selects a block of cells, from the gutter selects whole rows */
+
+  const EDGE = 36 // px from an edge where dragging auto-scrolls
+
+  /** { rowId, propId } of the body cell under a point clamped inside the visible grid (propId undefined over the gutter). */
+  function cellAt(x, y) {
+    const rr = scroller.getBoundingClientRect()
+    const el = document.elementFromPoint(
+      Math.max(rr.left + 1, Math.min(rr.left + scroller.clientWidth - 2, x)),
+      Math.max(rr.top + HEAD_H + 1, Math.min(rr.top + scroller.clientHeight - 2, y)))
+    const tr = el?.closest('.db-tr')
+    return tr && body.contains(tr) ? { rowId: tr.dataset.rowId, propId: el.closest('.db-td')?.dataset.prop } : null
+  }
+
+  body.addEventListener('pointerdown', (e) => {
+    const t = e.target
+    if (e.button !== 0 || e.shiftKey || t.closest('a, .db-open-btn, .db-inline-input, .is-editing')) return
+    const tr = t.closest('.db-tr')
+    const gutter = t.closest('.db-gutter')
+    const startProp = t.closest('.db-td')?.dataset.prop
+    if (!tr || !cols.length || (!gutter && !startProp)) return
+    const startRow = tr.dataset.rowId
+    const sx = e.clientX
+    const sy = e.clientY
+    let started = false
+    let last = { x: sx, y: sy }
+    let loop = 0
+
+    const extend = () => {
+      const c = cellAt(last.x, last.y)
+      if (!c || !sel) return
+      const propId = rowMode ? cols[cols.length - 1].id : c.propId || sel.propId
+      if (c.rowId === sel.rowId && propId === sel.propId) return
+      sel = { rowId: c.rowId, propId }
+      paintSelection()
+    }
+    const tick = () => {
+      const rr = scroller.getBoundingClientRect()
+      const top = rr.top + HEAD_H
+      const bottom = rr.top + scroller.clientHeight
+      const right = rr.left + scroller.clientWidth
+      const speed = (d) => Math.min(40, Math.ceil(d / 3))
+      const dy = last.y < top + EDGE ? -speed(top + EDGE - last.y) : last.y > bottom - EDGE ? speed(last.y - bottom + EDGE) : 0
+      const dx = rowMode ? 0 : last.x < rr.left + EDGE ? -speed(rr.left + EDGE - last.x) : last.x > right - EDGE ? speed(last.x - right + EDGE) : 0
+      if (dy || dx) {
+        scroller.scrollTop += dy
+        scroller.scrollLeft += dx
+        virtual.render()
+        extend()
+      }
+      loop = requestAnimationFrame(tick)
+    }
+    const move = (ev) => {
+      last = { x: ev.clientX, y: ev.clientY }
+      if (!started) {
+        // a cell drag starts once the pointer reaches another cell, so a wobbly click still edits
+        const c = gutter ? null : cellAt(last.x, last.y)
+        if (gutter ? Math.hypot(last.x - sx, last.y - sy) < 4 : !c || (c.rowId === startRow && c.propId === startProp)) return
+        started = true
+        scroller.focus({ preventScroll: true })
+        select(startRow, gutter ? cols[0].id : startProp, false)
+        anchor = sel
+        rowMode = !!gutter
+        if (rowMode) sel = { rowId: startRow, propId: cols[cols.length - 1].id }
+        paintSelection()
+        loop = requestAnimationFrame(tick)
+      }
+      extend()
+    }
+    const up = () => {
+      endDrag = null
+      cancelAnimationFrame(loop)
+      window.removeEventListener('pointermove', move, true)
+      window.removeEventListener('pointerup', up, true)
+      window.removeEventListener('pointercancel', up, true)
+      if (!started) return
+      // swallow the click that follows a drag (it would edit a cell or open the row menu)
+      window.addEventListener('click', swallow, true)
+      setTimeout(() => window.removeEventListener('click', swallow, true), 0)
+    }
+    endDrag?.()
+    endDrag = up
+    window.addEventListener('pointermove', move, true)
+    window.addEventListener('pointerup', up, true)
+    window.addEventListener('pointercancel', up, true)
+  })
+
+  // Ctrl+C on the grid copies the selection as tab-separated text that pastes into a spreadsheet
+  const onCopy = (e) => {
+    const r = document.activeElement === scroller && !editing && range()
+    if (!r) return
+    const cells = rangeRows(r).map((row) => rangeCols(r).map((p) => neutraliseFormula(exportText(row, p, store))))
+    e.clipboardData.setData('text/plain', stringify(cells, { delimiter: '\t', eol: '\n' }).replace(/\n$/, ''))
+    e.preventDefault()
+  }
+  document.addEventListener('copy', onCopy)
 
   scroller.addEventListener('focusout', () => {
     // keep the selection visible but dimmed when focus moves elsewhere
@@ -399,7 +545,9 @@ export function createTableView(host, ctx) {
     if (change.notesOnly) return
     buildHeader()
     layout()
-    if (sel && virtual.indexOf(sel.rowId) < 0) sel = null
+    const shown = (c) => virtual.indexOf(c.rowId) >= 0 && cols.some((p) => p.id === c.propId)
+    if (sel && !shown(sel)) sel = null
+    if (!sel || (anchor && !shown(anchor))) (anchor = null, rowMode = false)
     virtual.render()
     paintSelection()
   }
@@ -415,6 +563,8 @@ export function createTableView(host, ctx) {
     },
     destroy() {
       cancelAnimationFrame(raf)
+      endDrag?.()
+      document.removeEventListener('copy', onCopy)
       ro.disconnect()
       scroller.remove()
     },

@@ -251,7 +251,18 @@ function mount(el, mctx) {
     root.classList.remove('has-peek')
   }
 
-  function rowMenu(anchor, rowId, { inPanel } = {}) {
+  function rowMenu(anchor, rowId, { inPanel, rowIds } = {}) {
+    if (rowIds?.length > 1) {
+      return menu(anchor, [{
+        label: `Delete ${rowIds.length} rows`, icon: 'trash', danger: true,
+        onClick: async () => {
+          if (!(await confirmDialog({ title: `Delete ${rowIds.length} rows?`, message: 'Their values, notes and files will be removed. This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return
+          if (rowIds.includes(peek?.rowId)) closePeek()
+          if (await store.deleteRows(rowIds).then(() => false, () => true)) return
+          toast(`${rowIds.length} rows deleted`, { type: 'success' })
+        },
+      }], { align: 'end' })
+    }
     menu(anchor, [
       !inPanel ? { label: 'Open in side peek', icon: 'sidebar', onClick: () => openPeek(rowId) } : null,
       !page ? { label: 'Open as page', icon: 'external-link', onClick: () => navigate(`#/m/${encodeURIComponent(module.id)}/r/${encodeURIComponent(rowId)}`) } : null,
@@ -262,7 +273,7 @@ function mount(el, mctx) {
           if (!(await confirmDialog({ title: 'Delete this row?', message: 'Its values, notes and files will be removed. This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return
           if (peek?.rowId === rowId) closePeek()
           const wasPage = page?.rowId === rowId
-          await store.deleteRows([rowId])
+          if (await store.deleteRows([rowId]).then(() => false, () => true)) return
           toast('Row deleted', { type: 'success' })
           if (wasPage) navigate(`#/m/${encodeURIComponent(module.id)}`)
         },
