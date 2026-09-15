@@ -2,7 +2,7 @@
 
 import { h, popover, menu, confirmDialog, formatDate } from '../../lib/ui.js'
 import { icon } from '../../lib/icons.js'
-import { TYPES, typeOf, glyph, propIcon, parseDateInput } from './types.js'
+import { TYPES, typeOf, glyph, propIcon, parseDateInput, filtersOf } from './types.js'
 import { isGroupable } from './query.js'
 import { dragGesture } from './drag.js'
 import { keepInView } from './fit.js'
@@ -23,14 +23,16 @@ function nativeSelect(options, value, onChange, attrs = {}) {
 
 /* ------------------------------------------------------------------ type picker */
 
-export function typePicker(anchor, { title = 'Property type', current, onPick } = {}) {
+export function typePicker(anchor, { title = 'Property type', current, store, onPick } = {}) {
   let pop
   const list = h('div', { class: 'menu db-type-list', role: 'menu' },
     h('div', { class: 'menu-header' }, title),
     Object.entries(TYPES).filter(([k]) => k !== 'title').map(([key, t]) => {
-      const b = item(t.label, glyph(t.icon, 16), () => {
+      const b = item(t.label, glyph(t.icon, 16), async () => {
         pop.close()
-        onPick(key)
+        if (!t.setup || key === current || !store) return onPick(key)
+        const config = await t.setup({ store })
+        if (config) onPick(key, config)
       }, { trailing: key === current ? icon('check', { size: 14 }) : null, cls: 'db-type-item' })
       b.dataset.type = key
       return b
@@ -60,10 +62,10 @@ export function propertyMenu(anchor, prop, ctx, { focusName = false } = {}) {
   const rows = [h('div', { class: 'db-prop-menu-name' }, name)]
   if (prop.type !== 'title') {
     const typeBtn = item('Type', glyph(t.icon, 16), () => typePicker(typeBtn, {
-      title: 'Change type', current: prop.type,
-      onPick: (type) => {
+      title: 'Change type', current: prop.type, store,
+      onPick: (type, config) => {
         pop.close()
-        if (type !== prop.type) store.updateProperty(prop.id, { type }).catch(() => {})
+        if (type !== prop.type) store.updateProperty(prop.id, config ? { type, config } : { type }).catch(() => {})
       },
     }), { trailing: h('span', { class: 'db-menu-value' }, t.label, icon('chevron-right', { size: 12 })), cls: 'db-prop-type' })
     rows.push(typeBtn)
@@ -75,6 +77,12 @@ export function propertyMenu(anchor, prop, ctx, { focusName = false } = {}) {
       onClick: () => store.updateProperty(prop.id, { config: { ...prop.config, format: f.key } }).catch(() => {}),
     }))), { trailing: h('span', { class: 'db-menu-value' }, fmt.label, icon('chevron-right', { size: 12 })), cls: 'db-number-format' })
     rows.push(fmtBtn)
+  }
+  for (const mi of t.menuItems?.(prop, ctx) || []) {
+    rows.push(item(mi.label, glyph(t.icon, 16), () => {
+      pop.close()
+      mi.onClick()
+    }, { trailing: h('span', { class: 'db-menu-value' }, mi.value || '', icon('chevron-right', { size: 12 })), cls: mi.cls }))
   }
   rows.push(h('div', { class: 'menu-divider' }))
   const sortBy = (direction) => () => {
@@ -101,7 +109,7 @@ export function propertyMenu(anchor, prop, ctx, { focusName = false } = {}) {
     rows.push(h('div', { class: 'menu-divider' }))
     rows.push(item('Delete property', icon('trash', { size: 16 }), async () => {
       pop.close()
-      const ok = await confirmDialog({ title: `Delete "${prop.name}"?`, message: 'Its values will be removed from every row. This cannot be undone.', confirmLabel: 'Delete', danger: true })
+      const ok = await confirmDialog({ title: `Delete "${prop.name}"?`, message: t.deleteMessage?.(prop, store) || 'Its values will be removed from every row. This cannot be undone.', confirmLabel: 'Delete', danger: true })
       if (ok) store.deleteProperty(prop.id)
     }, { danger: true }))
   }
@@ -148,7 +156,7 @@ export function sortMenu(anchor, ctx) {
 /* ------------------------------------------------------------------ filter */
 
 function defaultRule(prop) {
-  const ops = Object.keys(typeOf(prop).filters || {})
+  const ops = Object.keys(filtersOf(prop))
   return { property: prop.id, operator: ops[0], value: '' }
 }
 
@@ -199,7 +207,7 @@ export function filterMenu(anchor, ctx, { addFor } = {}) {
         return h('div', { class: 'db-config-row db-filter-row' }, conj(group, i), h('div', { class: 'db-filter-group' }, renderGroup(rule, depth + 1)), remove)
       }
       const prop = store.propById.get(rule.property) || store.properties[0]
-      const ops = typeOf(prop).filters || {}
+      const ops = filtersOf(prop)
       const op = ops[rule.operator]
       return h('div', { class: 'db-config-row db-filter-row', dataset: { type: prop.type } },
         conj(group, i),

@@ -1,6 +1,6 @@
 // Filtering, search, sorting and grouping for a view. Type behaviour comes from types.js.
 
-import { typeOf, getValue, isEmptyFor, valueText, EMPTY_GROUP } from './types.js'
+import { typeOf, getValue, isEmptyFor, valueText, filtersOf, EMPTY_GROUP } from './types.js'
 
 /** A rule is { property, operator, value }; a group is { op: 'and'|'or', rules: [rule|group] }. */
 export function matchesFilter(row, filter, store) {
@@ -15,7 +15,7 @@ export function matchesFilter(row, filter, store) {
 export function matchesRule(row, rule, store) {
   const prop = store.propById.get(rule.property)
   if (!prop) return null
-  const op = typeOf(prop).filters?.[rule.operator]
+  const op = filtersOf(prop)[rule.operator]
   if (!op) return null
   if (op.input !== 'none' && (rule.value == null || rule.value === '')) return null
   return !!op.test(getValue(row, prop), rule.value, prop)

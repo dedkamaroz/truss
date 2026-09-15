@@ -1,13 +1,20 @@
 // Client-side database state with optimistic mutations. Views subscribe to change events.
 
 import { toast } from '../../lib/ui.js'
+import { typeOf } from './types.js'
+import { registerDb, unregisterDb, invalidate } from './relations.js'
 
 const enc = encodeURIComponent
+const POLL_MS = 2000
+const isRelation = (p) => !!typeOf(p).relation
+const hasComputed = (props) => props.some((p) => typeOf(p).computed)
 
 export function createStore(api, moduleId) {
   const base = `/api/databases/${enc(moduleId)}`
   const listeners = new Set()
   const pendingViewSaves = new Map() // viewId -> timer
+  let pollTimer = null
+  let destroyed = false
 
   const s = {
     moduleId,
@@ -19,6 +26,7 @@ export function createStore(api, moduleId) {
     views: [],
     attachments: new Map(), // id -> attachment row
     schemaVersion: 0,
+    related: new Map(), // moduleId -> loaded related database { moduleId, module, properties, propById, rows, rowById, stamp }
 
     on(fn) {
       listeners.add(fn)
@@ -34,6 +42,104 @@ export function createStore(api, moduleId) {
       s.rowById = new Map(s.rows.map((r) => [r.id, r]))
       s.views = data.views
       s.attachments = new Map(atts.map((a) => [a.id, a]))
+      registerDb(s)
+      await s.ensureRelated().catch((err) => console.warn('[database] related data failed to load', err))
+      if (!pollTimer && !destroyed) pollTimer = setInterval(pollRelated, POLL_MS)
+    },
+
+    /** Re-reads everything (after relation schema changes that the server fans out). */
+    async reload() {
+      const data = await api.get(base)
+      s.module = data.module
+      setProperties(data.properties)
+      const old = s.rowById
+      s.rows = data.rows.map((r) => {
+        r._v = (old.get(r.id)?._v || 0) + 1
+        return r
+      })
+      s.rowById = new Map(s.rows.map((r) => [r.id, r]))
+      s.views = data.views
+      registerDb(s)
+      await s.ensureRelated().catch(() => {})
+      emit({ kind: 'views' })
+      emit({ kind: 'schema' })
+    },
+
+    /** Loads databases that relation properties point at (and theirs, when they compute values further). */
+    async ensureRelated() {
+      const queue = [s]
+      const seen = new Set([moduleId])
+      let loaded = false
+      while (queue.length) {
+        const db = queue.shift()
+        for (const p of db.properties.filter(isRelation)) {
+          const target = p.config?.targetModuleId
+          if (!target || seen.has(target)) continue
+          seen.add(target)
+          let rdb = s.related.get(target)
+          if (!rdb) {
+            rdb = await fetchRelated(target)
+            if (!rdb) continue
+            loaded = true
+          }
+          if (hasComputed(rdb.properties)) queue.push(rdb)
+        }
+      }
+      if (loaded) {
+        touchAll()
+        emit({ kind: 'related' })
+      }
+    },
+
+    /** Re-reads one related database if it changed on the server. */
+    async refreshRelated(targetId) {
+      const rdb = s.related.get(targetId)
+      if (!rdb) return
+      const { stamp } = await api.get(`/api/databases/${enc(targetId)}/stamp`).catch(() => ({}))
+      if (!stamp || stamp === rdb.stamp || destroyed) return
+      if (await fetchRelated(targetId, stamp)) {
+        await s.ensureRelated().catch(() => {})
+        touchAll()
+        emit({ kind: 'related' })
+      }
+    },
+
+    async createRelatedRow(targetId, values) {
+      try {
+        const row = await api.post(`/api/databases/${enc(targetId)}/rows`, { values })
+        const rdb = s.related.get(targetId)
+        if (rdb) {
+          rdb.rows.push(row)
+          rdb.rowById.set(row.id, row)
+          invalidate()
+        }
+        return row
+      } catch (err) {
+        fail(err, 'Could not add the row')
+        throw err
+      }
+    },
+
+    /** Appends many rows in batches (CSV import into this database). onProgress(done, total). */
+    async importRows(valuesList, onProgress) {
+      const BATCH = 2000
+      const created = []
+      for (let i = 0; i < valuesList.length; i += BATCH) {
+        const res = await api.post(`${base}/rows/batch`, { create: valuesList.slice(i, i + BATCH).map((values) => ({ values })) })
+        for (const r of res.created) (r._v = 1, created.push(r))
+        onProgress?.(Math.min(valuesList.length, i + BATCH), valuesList.length)
+      }
+      for (const r of created) (s.rows.push(r), s.rowById.set(r.id, r))
+      sortRowsByOrder()
+      emit({ kind: 'rows' })
+      return created
+    },
+
+    destroy() {
+      destroyed = true
+      clearInterval(pollTimer)
+      unregisterDb(s)
+      for (const rdb of s.related.values()) unregisterDb(rdb)
     },
 
     /* ---- rows */
@@ -51,6 +157,7 @@ export function createStore(api, moduleId) {
       try {
         const saved = await api.patch(`${base}/rows/${enc(rowId)}`, { values })
         row.updated_at = saved.updated_at
+        syncLinked(values, before, saved).catch((err) => console.warn('[database] link refresh failed', err))
       } catch (err) {
         row.values = before
         touch(row)
@@ -103,6 +210,21 @@ export function createStore(api, moduleId) {
       try {
         await api.post(`${base}/rows/batch`, { delete: ids })
         for (const a of [...s.attachments.values()]) if (set.has(a.page_id)) s.attachments.delete(a.id)
+        // the server removed links to these rows; mirror that for relations inside this database
+        let changed = false
+        for (const p of s.properties.filter((x) => isRelation(x) && x.config?.targetModuleId === moduleId)) {
+          for (const r of s.rows) {
+            const v = r.values[p.id]
+            if (!v?.some((id) => set.has(id))) continue
+            const next = v.filter((id) => !set.has(id))
+            if (next.length) r.values[p.id] = next
+            else delete r.values[p.id]
+            touch(r)
+            changed = true
+          }
+        }
+        if (changed) emit({ kind: 'rows' })
+        for (const p of s.properties.filter(isRelation)) if (p.config?.twoWay && p.config.targetModuleId !== moduleId) s.refreshRelated(p.config.targetModuleId)
       } catch (err) {
         for (const r of removed) (s.rows.push(r), s.rowById.set(r.id, r))
         sortRowsByOrder()
@@ -132,6 +254,7 @@ export function createStore(api, moduleId) {
       try {
         const p = await api.post(`${base}/properties`, data)
         setProperties([...s.properties, p])
+        if (isRelation(p)) await s.reload().catch(() => {})
         emit({ kind: 'schema' })
         return p
       } catch (err) {
@@ -155,6 +278,8 @@ export function createStore(api, moduleId) {
           const local = s.rowById.get(r.id)
           if (local) (local.values = r.values, touch(local))
         }
+        if (isRelation(prev) || isRelation(property)) await s.reload().catch(() => {})
+        else if (typeOf(property).computed) touchAll()
         emit({ kind: 'schema' })
         return property
       } catch (err) {
@@ -170,8 +295,11 @@ export function createStore(api, moduleId) {
       setProperties(prev.filter((p) => p.id !== id))
       emit({ kind: 'schema' })
       try {
-        await api.del(`${base}/properties/${enc(id)}`)
-        for (const r of s.rows) if (id in r.values) (delete r.values[id], touch(r))
+        const res = await api.del(`${base}/properties/${enc(id)}`)
+        const gone = new Set(res?.deleted || [id])
+        if (gone.size > 1) setProperties(s.properties.filter((p) => !gone.has(p.id)))
+        for (const r of s.rows) for (const pid of gone) if (pid in r.values) (delete r.values[pid], touch(r))
+        if (gone.size > 1) for (const rdb of s.related.values()) s.refreshRelated(rdb.moduleId)
         emit({ kind: 'schema' })
       } catch (err) {
         setProperties(prev)
@@ -262,6 +390,56 @@ export function createStore(api, moduleId) {
     s.schemaVersion++
   }
 
+  async function fetchRelated(targetId, knownStamp) {
+    try {
+      const [data, st] = await Promise.all([api.get(`/api/databases/${enc(targetId)}`), knownStamp ? { stamp: knownStamp } : api.get(`/api/databases/${enc(targetId)}/stamp`)])
+      if (destroyed) return null
+      const properties = [...data.properties].sort((a, b) => a.sort_order - b.sort_order)
+      const rdb = {
+        moduleId: targetId, module: data.module, properties, propById: new Map(properties.map((p) => [p.id, p])),
+        rows: data.rows, rowById: new Map(data.rows.map((r) => [r.id, r])), views: data.views, attachments: new Map(), stamp: st.stamp,
+      }
+      s.related.set(targetId, rdb)
+      registerDb(rdb)
+      return rdb
+    } catch (err) {
+      console.warn('[database] could not load related database', targetId, err?.message)
+      return null
+    }
+  }
+
+  async function pollRelated() {
+    if (destroyed || document.hidden || !s.related.size) return
+    for (const id of [...s.related.keys()]) await s.refreshRelated(id)
+  }
+
+  // After a two-way relation edit: rows in this database may have changed on the server; other databases refresh by stamp.
+  async function syncLinked(values, before, saved) {
+    for (const p of Object.keys(values).map((k) => s.propById.get(k)).filter((x) => x && isRelation(x) && x.config?.twoWay)) {
+      const target = p.config.targetModuleId
+      if (target !== moduleId) {
+        // only matters when the other side computes values from its links; polling catches up otherwise
+        if (hasComputed(s.related.get(target)?.properties || [])) await s.refreshRelated(target)
+        continue
+      }
+      const a = before[p.id] || []
+      const b = saved.values[p.id] || []
+      const affected = [...new Set([...a.filter((x) => !b.includes(x)), ...b.filter((x) => !a.includes(x)), saved.id])]
+      const fresh = await Promise.all(affected.map((rid) => api.get(`${base}/rows/${enc(rid)}`).catch(() => null)))
+      for (const r of fresh.filter(Boolean)) {
+        const local = s.rowById.get(r.id)
+        if (local) (local.values = r.values, local.updated_at = r.updated_at, touch(local))
+      }
+      emit({ kind: 'rows' })
+    }
+  }
+
+  // Computed values may depend on other rows or databases: recompute and re-render every row.
+  function touchAll() {
+    invalidate()
+    for (const r of s.rows) r._v = (r._v || 0) + 1
+  }
+
   function sortRowsByOrder() {
     s.rows.sort((a, b) => a.sort_order - b.sort_order)
   }
@@ -283,6 +461,11 @@ export function createStore(api, moduleId) {
   }
 
   function emit(change) {
+    invalidate()
+    if ((change.kind === 'row' || change.kind === 'rows') && s.properties.some((p) => typeOf(p).computed || (isRelation(p) && p.config?.targetModuleId === moduleId))) {
+      // rollups and same-database relations can show values from other rows
+      for (const r of s.rows) if (r.id !== change.rowId) r._v = (r._v || 0) + 1
+    }
     for (const fn of [...listeners]) {
       try {
         fn(change)

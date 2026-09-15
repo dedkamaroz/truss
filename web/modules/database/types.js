@@ -3,10 +3,14 @@
 // Views, peek, sort and filter code only look types up through typeOf(prop).
 // To add a type: add one entry to TYPES (and its server rule in server/routes/database.js).
 
-import { h, popover, toast, formatDate, formatDateTime } from '../../lib/ui.js'
+import { h, popover, toast, confirmDialog, formatDate, formatDateTime } from '../../lib/ui.js'
 import { icon, hasIcon } from '../../lib/icons.js'
 import api from '../../lib/api.js'
 import { keepInView } from './fit.js'
+import {
+  bindTypes, relationEditor, relationSetup, rollupSetup, formulaSetup, relatedTitles, rollupValue, rollupText, rollupKind, rollupParts, rollupFn,
+  formulaValue, formulaKind, formulaDateSerial, formulaSyntaxError, compareMixed, isError, dbFor, ERROR_HINTS,
+} from './relations.js'
 
 export const COLORS = ['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']
 const COLOR_LABELS = { default: 'Default', gray: 'Grey', brown: 'Brown', orange: 'Orange', yellow: 'Yellow', green: 'Green', blue: 'Blue', purple: 'Purple', pink: 'Pink', red: 'Red' }
@@ -49,6 +53,9 @@ const GLYPHS = {
   checkbox: '<rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="m8.2 12.4 2.7 2.7 5-5.6"/>',
   email: '<circle cx="12" cy="12" r="3.4"/><path d="M15.4 8.6v4.6a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.3 6.7"/>',
   phone: '<path d="M6 4h3l1.6 4.2-2 1.4a10.5 10.5 0 0 0 5.8 5.8l1.4-2L20 15v3a2 2 0 0 1-2.1 2A16 16 0 0 1 4 6.1 2 2 0 0 1 6 4z"/>',
+  relation: '<path d="M7 17 17 7M9.5 7H17v7.5"/><path d="M4.5 12.5v6a1 1 0 0 0 1 1h6"/>',
+  rollup: '<path d="M5 19h14M7 15l3.5-4 3 2.5L18 7"/><circle cx="18" cy="7" r="1.2" fill="currentColor" stroke="none"/>',
+  formula: '<path d="M15.5 4.5h-2.2a2.3 2.3 0 0 0-2.3 2.1L9.8 17.4a2.3 2.3 0 0 1-2.3 2.1H6M8 10.5h7"/><path d="m14.5 14 4.5 5M19 14l-4.5 5"/>',
 }
 
 /** Icon for a type: shared icons.js icon when one exists, else a local glyph in the same style. */
@@ -175,6 +182,51 @@ const linkType = (type, label, iconName, placeholder) => textual({
 })
 
 const options = (prop) => prop.config?.options || []
+const serialOfDay = (iso) => formulaDateSerial(iso)
+const formulaNumber = new Intl.NumberFormat('en-AU', { maximumFractionDigits: 4 })
+
+/* ---- relation, rollup and formula helpers */
+
+const relationText = (v, prop) => relatedTitles(prop, v).join(', ')
+const relationOps = {
+  contains: needsText('contains', (v, a, prop) => relatedTitles(prop, v).some((t) => lower(t).includes(lower(a)))),
+  does_not_contain: needsText('does not contain', (v, a, prop) => !relatedTitles(prop, v).some((t) => lower(t).includes(lower(a)))),
+  ...emptyOps,
+}
+const dayOps = dateOps((v) => v)
+const checkboxOps = {
+  checked: { label: 'is checked', input: 'none', test: (v) => v === true },
+  unchecked: { label: 'is not checked', input: 'none', test: (v) => v !== true },
+}
+
+function renderRelation(v, prop) {
+  const tdb = dbFor(prop.config?.targetModuleId)
+  if (!v?.length || !tdb) return null
+  const title = tdb.properties.find((p) => p.type === 'title')
+  const chips = v.map((id) => tdb.rowById.get(id)).filter(Boolean).map((r) => {
+    const t = (title && r.values[title.id]) || ''
+    return h('span', { class: 'db-rel-chip', title: t || 'Untitled', dataset: { rowId: r.id } }, icon('page', { size: 12 }), h('span', { class: `db-rel-chip-label${t ? '' : ' is-empty'}` }, t || 'Untitled'))
+  })
+  return chips.length ? h('span', { class: 'db-rel-chips' }, chips) : null
+}
+
+function renderFormulaValue(v) {
+  if (v == null || v === '') return null
+  if (isError(v)) {
+    return h('span', { class: 'db-formula-error', title: ERROR_HINTS[v.error] || 'Formula error', dataset: { error: v.error } }, icon('alert', { size: 12 }), h('span', {}, v.error === '#SYNTAX!' ? 'Syntax error' : v.error))
+  }
+  if (typeof v === 'boolean') return h('span', { class: `db-checkbox is-readonly${v ? ' is-checked' : ''}`, role: 'img', 'aria-label': v ? 'True' : 'False' }, v ? icon('check', { size: 12, strokeWidth: 3 }) : null)
+  if (typeof v === 'number') return h('span', { class: 'db-number' }, formulaNumber.format(v))
+  return h('span', { class: 'db-text' }, String(v))
+}
+
+const formulaText = (v) => (v == null ? '' : isError(v) ? v.error : typeof v === 'number' ? formulaNumber.format(v) : typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v))
+
+async function openSetupMenu(anchor, prop, ctx) {
+  const t = typeOf(prop)
+  const config = await t.setup({ store: ctx.store, current: prop.config, name: prop.name, anchor })
+  if (config) ctx.store.updateProperty(prop.id, { config }).catch(() => {})
+}
 
 export const TYPES = {
   title: textual({
@@ -208,6 +260,7 @@ export const TYPES = {
     edit: (o) => optionEditor(o),
     parse: (s, prop) => options(prop).find((o) => lower(o.name) === lower(s.trim()))?.id ?? null,
     serialise: (v, prop) => optionOf(prop, v)?.name ?? '',
+    formula: (v, prop) => optionOf(prop, v)?.name ?? null,
     render: (v, prop) => tag(optionOf(prop, v)),
   },
   multi_select: {
@@ -219,6 +272,7 @@ export const TYPES = {
     edit: (o) => optionEditor(o),
     parse: (s, prop) => s.split(',').map((p) => options(prop).find((o) => lower(o.name) === lower(p.trim()))?.id).filter(Boolean),
     serialise: (v, prop) => (v || []).map((id) => optionOf(prop, id)?.name).filter(Boolean).join(', '),
+    formula: (v, prop) => (v || []).map((id) => optionOf(prop, id)?.name).filter(Boolean).join(', '),
     render: (v, prop) => (v?.length ? h('span', { class: 'db-tags' }, v.map((id) => tag(optionOf(prop, id)))) : null),
   },
   status: {
@@ -231,6 +285,7 @@ export const TYPES = {
     edit: (o) => optionEditor(o),
     parse: (s, prop) => options(prop).find((o) => lower(o.name) === lower(s.trim()))?.id ?? null,
     serialise: (v, prop) => optionOf(prop, v)?.name ?? '',
+    formula: (v, prop) => optionOf(prop, v)?.name ?? null,
     render: (v, prop) => statusTag(optionOf(prop, v)),
   },
   date: {
@@ -250,6 +305,8 @@ export const TYPES = {
     },
     serialise: (v) => (v ? (v.end ? `${formatDate(v.start)} - ${formatDate(v.end)}` : formatDate(v.start)) : ''),
     render: (v) => (v ? h('span', { class: 'db-date' }, v.end ? `${formatDate(v.start)} → ${formatDate(v.end)}` : formatDate(v.start)) : null),
+    day: (v) => v?.start || null,
+    formula: (v) => (v ? serialOfDay(v.start) : null),
   },
   checkbox: {
     label: 'Checkbox', icon: 'checkbox', edit: 'toggle', align: 'center', defaultWidth: 110,
@@ -286,6 +343,92 @@ export const TYPES = {
       const a = store?.attachments.get(id)
       return a ? h('span', { class: 'db-file-chip', title: a.filename }, icon(/^image\//.test(a.mime) ? 'image' : 'file', { size: 12 }), h('span', { class: 'db-file-name' }, a.filename)) : null
     })) : null),
+    formula: (v, prop, row, store) => (v || []).map((id) => store?.attachments?.get(id)?.filename).filter(Boolean).join(', '),
+    csv: (v, prop, row, store) => (v || []).map((id) => store?.attachments?.get(id)?.filename).filter(Boolean).join(', '),
+  },
+  relation: {
+    label: 'Relation', icon: 'relation', defaultWidth: 220, relation: true,
+    get: (row, prop) => row.values[prop.id],
+    text: relationText,
+    compare: (a, b, prop) => a.length - b.length || collator.compare(relationText(a, prop), relationText(b, prop)),
+    filters: relationOps,
+    edit: (o) => relationEditor(o),
+    parse: (s, prop) => {
+      const tdb = dbFor(prop.config?.targetModuleId)
+      const title = tdb?.properties.find((p) => p.type === 'title')
+      if (!title) return []
+      const byTitle = new Map(tdb.rows.map((r) => [lower(r.values[title.id]), r.id]))
+      return [...new Set(s.split(',').map((p) => byTitle.get(lower(p.trim()))).filter(Boolean))]
+    },
+    serialise: relationText,
+    render: renderRelation,
+    formula: (v, prop) => relationText(v, prop),
+    setup: (o) => relationSetup(o),
+    menuItems: (prop, ctx) => {
+      const target = dbFor(prop.config?.targetModuleId)
+      return [{
+        label: 'Related to', value: prop.config?.targetModuleId === ctx.store.moduleId ? 'This database' : target?.module?.title || 'Not set', cls: 'db-relation-target',
+        onClick: async () => {
+          const config = await relationSetup({ store: ctx.store, current: prop.config })
+          if (!config) return
+          if (config.targetModuleId !== prop.config?.targetModuleId && ctx.store.rows.some((r) => r.values[prop.id]?.length)) {
+            if (!(await confirmDialog({ title: 'Change the related database?', message: 'Existing links in this property will be removed.', confirmLabel: 'Change', danger: true }))) return
+          }
+          ctx.store.updateProperty(prop.id, { config }).catch(() => {})
+        },
+      }]
+    },
+    deleteMessage: (prop, store) => {
+      const reverseId = prop.config?.twoWay && prop.config.reversePropertyId
+      const tdb = dbFor(prop.config?.targetModuleId)
+      const reverse = reverseId && tdb?.propById.get(reverseId)
+      if (!reverse) return null
+      const where = tdb === store || prop.config.targetModuleId === store.moduleId ? 'this database' : `"${tdb.module?.title || 'the related database'}"`
+      return `Its links will be removed from every row. The matching "${reverse.name}" property in ${where} will also be deleted. This cannot be undone.`
+    },
+  },
+  rollup: {
+    label: 'Rollup', icon: 'rollup', readOnly: true, computed: true, defaultWidth: 160,
+    get: (row, prop) => rollupValue(row, prop),
+    text: (v, prop) => rollupText(v, prop),
+    alignFor: (prop) => (rollupKind(prop) === 'number' ? 'end' : null),
+    compare: compareMixed,
+    filters: numberOps,
+    filtersFor: (prop) => ({ number: numberOps, date: dayOps, text: textOps }[rollupKind(prop)]),
+    day: (v, prop) => (rollupKind(prop) === 'date' ? v : null),
+    serialise: (v, prop) => rollupText(v, prop),
+    render: (v, prop) => {
+      if (v == null || v === '') return null
+      const kind = rollupKind(prop)
+      return h('span', { class: kind === 'number' ? 'db-number db-rollup' : 'db-text db-rollup' }, rollupText(v, prop))
+    },
+    formula: (v, prop) => (rollupKind(prop) === 'date' ? serialOfDay(v) : v),
+    setup: (o) => rollupSetup(o),
+    menuItems: (prop, ctx) => {
+      const { relation, target } = rollupParts(prop)
+      return [
+        { label: 'Relation', value: relation?.name || 'Not set', cls: 'db-rollup-relation-item', onClick: () => openSetupMenu(null, prop, ctx) },
+        { label: 'Property', value: target?.name || 'Not set', cls: 'db-rollup-property-item', onClick: () => openSetupMenu(null, prop, ctx) },
+        { label: 'Calculate', value: rollupFn(prop).label, cls: 'db-rollup-fn-item', onClick: () => openSetupMenu(null, prop, ctx) },
+      ]
+    },
+  },
+  formula: {
+    label: 'Formula', icon: 'formula', readOnly: true, computed: true, defaultWidth: 160,
+    get: (row, prop) => formulaValue(row, prop),
+    isEmpty: (v) => v == null || v === '',
+    text: formulaText,
+    alignFor: (prop) => (formulaKind(prop) === 'number' ? 'end' : null),
+    compare: compareMixed,
+    filters: textOps,
+    filtersFor: (prop) => ({ number: numberOps, boolean: checkboxOps, text: textOps }[formulaKind(prop)]),
+    serialise: (v) => (v == null ? '' : isError(v) ? v.error : String(v)),
+    render: renderFormulaValue,
+    setup: (o) => formulaSetup(o),
+    menuItems: (prop, ctx) => [{
+      label: 'Edit formula', value: formulaSyntaxError(prop.config?.expression || '') ? 'Syntax error' : '', cls: 'db-formula-edit',
+      onClick: () => openSetupMenu(null, prop, ctx),
+    }],
   },
   created_time: {
     label: 'Created time', icon: 'clock', readOnly: true, defaultWidth: 210,
@@ -294,6 +437,8 @@ export const TYPES = {
     text: (v) => formatDateTime(v),
     compare: (a, b) => (a < b ? -1 : a > b ? 1 : 0),
     filters: dateOps(dayOfDateTime),
+    day: dayOfDateTime,
+    formula: (v) => serialOfDay(dayOfDateTime(v)),
     render: (v) => h('span', { class: 'db-muted' }, formatDateTime(v)),
   },
   last_edited_time: {
@@ -303,6 +448,8 @@ export const TYPES = {
     text: (v) => formatDateTime(v),
     compare: (a, b) => (a < b ? -1 : a > b ? 1 : 0),
     filters: dateOps(dayOfDateTime),
+    day: dayOfDateTime,
+    formula: (v) => serialOfDay(dayOfDateTime(v)),
     render: (v) => h('span', { class: 'db-muted' }, formatDateTime(v)),
   },
 }
@@ -318,6 +465,17 @@ export const hasDisplayValue = (row, prop) => !isEmptyValue(getValue(row, prop))
 export const groupLabel = (group, prop) => (group.option ? typeOf(prop).render(group.option.id, prop) : h('span', { class: 'db-group-label' }, group.label))
 export const canCalendar = (prop) => !!typeOf(prop).calendar
 export const canCover = (prop) => !!typeOf(prop).cover
+/** Filter operators for a property (computed types depend on their result kind). */
+export const filtersOf = (prop) => typeOf(prop).filtersFor?.(prop) || typeOf(prop).filters || {}
+export const alignOf = (prop) => (typeOf(prop).alignFor ? typeOf(prop).alignFor(prop) : typeOf(prop).align)
+/** Text for CSV export: serialised form where a type has one (raw numbers, DD/MM/YYYY dates), else display text. */
+export const exportText = (row, prop, store) => {
+  const t = typeOf(prop)
+  const v = getValue(row, prop)
+  return (t.csv || t.serialise || t.text)(v, prop, row, store)
+}
+
+bindTypes({ typeOf, getValue, valueText, isEmptyValue, glyph })
 
 /* ------------------------------------------------------------------ editing */
 
