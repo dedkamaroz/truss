@@ -128,6 +128,9 @@ describe('attachments over HTTP', () => {
     assert.ok(!fs.existsSync(path.join(t.dataDir, '..', 'evil.bat')))
     assert.equal(sanitizeFilename('..\\..\\evil.bat'), 'evil.bat')
     assert.equal(sanitizeFilename('CON.txt'), '_CON.txt')
+    assert.equal(sanitizeFilename('report 1/2.pdf'), 'report 1_2.pdf')
+    assert.equal(sanitizeFilename('evidence <b>1</b>.txt'), 'evidence _b_1__b_.txt')
+    assert.equal(sanitizeFilename('../a/../../b.bat'), 'a_.._.._b.bat')
   })
 
   test('open and reveal in dry-run mode', async () => {
@@ -165,7 +168,7 @@ describe('ctx.attachments API', () => {
     fs.writeFileSync(src, 'x,y\n1,2\n')
     const b = await att.create({ moduleId: mod.id, pageId: 'p1', filename: 'out/../CON.csv', source: 'script-output', srcPath: src })
     assert.equal(b.source, 'script-output')
-    assert.equal(b.filename, '_CON.csv')
+    assert.equal(b.filename, 'out_.._CON.csv')
     assert.ok(fs.existsSync(src), 'srcPath is copied, not moved')
     const c = att.create({ moduleId: mod.id, pageId: 'p2', filename: 'c.txt', buffer: 'text' })
 
@@ -176,7 +179,7 @@ describe('ctx.attachments API', () => {
     assert.deepEqual(att.list({ moduleId: mod.id, pageId: 'p1' }).map((x) => x.id).sort(), [a.id, b.id].sort())
     assert.equal(att.list({ moduleId: mod.id }).length, 3)
     assert.equal(att.get('missing'), null)
-    assert.equal(att.pathOf(b.id), path.join(t.dataDir, 'attachments', b.id, '_CON.csv'))
+    assert.equal(att.pathOf(b.id), path.join(t.dataDir, 'attachments', b.id, 'out_.._CON.csv'))
     assert.equal(fs.readFileSync(att.pathOf(b.id), 'utf8'), 'x,y\n1,2\n')
     assert.equal(att.pathOf('missing'), null)
 

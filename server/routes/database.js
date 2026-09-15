@@ -405,12 +405,16 @@ function createService(ctx) {
 
   /** Removes a property's values from every row and deletes it. */
   function dropProperty(prop) {
+    dropValues(prop)
+    q.deleteProp.run(prop.id)
+  }
+
+  function dropValues(prop) {
     for (const r of q.rowsWithKey.all(prop.module_id, prop.id)) {
       const values = parseJson(r.values, {})
       delete values[prop.id]
       q.setRowValues.run(JSON.stringify(values), r.id)
     }
-    q.deleteProp.run(prop.id)
   }
 
   /** The linked reverse property of a two-way relation, if it still points back. */
@@ -453,6 +457,16 @@ function createService(ctx) {
       const added = b.filter((id) => !a.includes(id))
       const removed = a.filter((id) => !b.includes(id))
       if (added.length || removed.length) linkReverse(reverse, rowId, added, removed, ts)
+    }
+  }
+
+  /** Before a module is deleted: relations in other databases that point at it are unlinked and their values cleared. */
+  function unlinkTarget(moduleId) {
+    for (const prop of q.relationsTo.all(moduleId)) {
+      if (prop.module_id === moduleId) continue // deleted along with the module
+      const { targetModuleId, twoWay, reversePropertyId, ...rest } = parseJson(prop.config, {})
+      dropValues(prop)
+      q.setPropConfig.run(JSON.stringify({ ...rest, targetModuleId: null, twoWay: false, reversePropertyId: null }), prop.id)
     }
   }
 
@@ -694,7 +708,7 @@ function createService(ctx) {
   return {
     q, db, propOut, rowOut, viewOut, loadModule, loadProp, loadRow, loadView, nameOf, uniqueName, propMap,
     createProperty, updateProperty, deleteProperty, createView, ensureInitialised, createReverse, reverseOf,
-    cleanValues, insertRow, patchRow, deleteRows, reorder, stamp, snapshot, checkTarget,
+    cleanValues, insertRow, patchRow, deleteRows, reorder, stamp, snapshot, checkTarget, unlinkTarget,
   }
 }
 
@@ -702,6 +716,7 @@ function createService(ctx) {
 
 export default function register(router, ctx) {
   const svc = databaseService(ctx)
+  ctx.onModuleDelete(svc.unlinkTarget)
   const { db } = ctx
   const { q, loadModule, loadProp, loadRow, loadView, nameOf, propMap, createProperty, createView, ensureInitialised, insertRow, patchRow } = svc
   const requireBody = (body) => {

@@ -14,6 +14,7 @@ test('boots with no module files: no console errors or CSP violations, creates e
   const templates = (await apiCall(page, 'GET', '/api/templates')).body
   expect(templates.length).toBeGreaterThanOrEqual(3)
 
+  const created = []
   for (const type of ['database', 'sheet', 'notebook']) {
     await newBtn.click()
     const dialog = page.getByRole('dialog')
@@ -29,12 +30,17 @@ test('boots with no module files: no console errors or CSP violations, creates e
     const row = page.locator(`.sidebar-group[data-type="${type}"] .sidebar-item[data-id="${id}"]`)
     await expect(row).toBeVisible()
     await expect(row).toHaveClass(/is-active/)
-    await expect(page.locator('.module-placeholder')).toBeVisible()
-    await expect(page.locator('.module-placeholder')).toContainText('not available')
+    // every type now has a real module, so it mounts instead of the placeholder
+    await expect(page.locator(`.module-body[data-type="${type}"]`)).toBeVisible()
+    await expect(page.locator('.module-placeholder')).toHaveCount(0)
 
     const saved = await apiCall(page, 'GET', `/api/modules/${id}`)
     expect(saved.body.type).toBe(type)
+    created.push(saved.body.title)
   }
+  // the picker names new modules uniquely ("Untitled", "Untitled 2", ...)
+  expect(new Set(created).size).toBe(created.length)
+  expect(created.every((t) => /^Untitled( \d+)?$/.test(t))).toBe(true)
 
   // grouped by type: each group only holds its own type
   for (const type of ['database', 'sheet', 'notebook']) {

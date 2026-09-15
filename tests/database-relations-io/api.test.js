@@ -25,6 +25,32 @@ async function newDb(title) {
 const rowsOf = (d) => new Map(d.rows.map((r) => [r.id, r]))
 
 describe('two-way relations', () => {
+  test('deleting the target database unlinks relations pointing at it and clears their values', async () => {
+    const projects = await newDb('Projects')
+    const tasks = await newDb('Tasks')
+    const rel = await ok('POST', `${projects.base}/properties`, { name: 'Tasks', type: 'relation', config: { targetModuleId: tasks.m.id, twoWay: true } })
+    const self = await ok('POST', `${projects.base}/properties`, { name: 'Parent', type: 'relation', config: { targetModuleId: projects.m.id } })
+    const t1 = await ok('POST', `${tasks.base}/rows`, { values: { [tasks.titleId]: 'A' } })
+    const p1 = await ok('POST', `${projects.base}/rows`, { values: { [projects.titleId]: 'Launch', [rel.id]: [t1.id] } })
+
+    await ok('DELETE', `/api/modules/${tasks.m.id}`)
+    const d = await projects.load()
+    const after = d.properties.find((p) => p.id === rel.id)
+    assert.deepEqual([after.config.targetModuleId, after.config.twoWay, after.config.reversePropertyId], [null, false, null])
+    assert.equal(rowsOf(d).get(p1.id).values[rel.id], undefined)
+    assert.equal(d.properties.find((p) => p.id === self.id).config.targetModuleId, projects.m.id, 'unrelated relations are untouched')
+    await ok('DELETE', `/api/modules/${projects.m.id}`)
+  })
+
+  test('module icons longer than 32 characters are rejected on create, patch and import', async () => {
+    const long = 'x'.repeat(33)
+    await fail('POST', '/api/modules', { type: 'database', icon: long })
+    const m = await ok('POST', '/api/modules', { type: 'database', icon: '👨‍👩‍👧‍👦' })
+    await fail('PATCH', `/api/modules/${m.id}`, { icon: long })
+    await fail('POST', '/api/databases/import', { truss: 1, database: { title: 'Long icon', icon: long, properties: [{ id: 't', name: 'Name', type: 'title' }], rows: [] } })
+    await ok('DELETE', `/api/modules/${m.id}`)
+  })
+
   test('creating a two-way relation creates the reverse property; linking and unlinking sync both sides', async () => {
     const projects = await newDb('Projects')
     const tasks = await newDb('Tasks')

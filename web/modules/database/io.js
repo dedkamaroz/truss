@@ -5,7 +5,7 @@ import { h, modal, toast } from '../../lib/ui.js'
 import { icon } from '../../lib/icons.js'
 import api from '../../lib/api.js'
 import { emit } from '../../lib/registry.js'
-import { stringify } from '../../lib/csv.js'
+import { stringify, neutraliseFormula } from '../../lib/csv.js'
 import { viewRows } from './query.js'
 import { typeOf, exportText, glyph } from './types.js'
 import { IMPORT_TYPES, readCsv, planColumns, buildDocument, CONVERT, OPTION_SPLIT } from './infer.js'
@@ -31,7 +31,7 @@ export function csvTable(store, view, scope = 'view') {
   const hidden = new Set(view?.config?.hidden || [])
   const props = scope === 'view' ? store.properties.filter((p) => p.type === 'title' || !hidden.has(p.id)) : store.properties
   const rows = scope === 'view' ? viewRows(store, view.config) : store.rows
-  return [props.map((p) => p.name), ...rows.map((r) => props.map((p) => exportText(r, p, store)))]
+  return [props.map((p) => neutraliseFormula(p.name)), ...rows.map((r) => props.map((p) => neutraliseFormula(exportText(r, p, store))))]
 }
 
 export function exportCsv(ctx, scope) {

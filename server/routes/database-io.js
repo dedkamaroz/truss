@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import { httpError } from '../http.js'
 import { transaction } from '../db.js'
 import { databaseService, VALUE_TYPES, VIEW_TYPES } from './database.js'
+import { MAX_ICON } from './modules.js'
 
 const bad = (code, message) => httpError(400, code, message)
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
@@ -36,7 +37,7 @@ export default function register(router, ctx) {
     })
     if (properties.filter((p) => p.type === 'title').length > 1) throw bad('invalid_import', 'A database has exactly one title property')
     if (d.title != null && typeof d.title !== 'string') throw bad('invalid_import', 'title must be text')
-    if (d.icon != null && typeof d.icon !== 'string') throw bad('invalid_import', 'icon must be text')
+    if (d.icon != null && (typeof d.icon !== 'string' || d.icon.length > MAX_ICON)) throw bad('invalid_import', `icon must be text of at most ${MAX_ICON} characters`)
 
     const { moduleId, files, propIds } = transaction(db, () => importDatabase(d, properties, rows, views))
     copyFiles(moduleId, files)

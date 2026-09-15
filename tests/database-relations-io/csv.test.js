@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parse, stringify, CsvError } from '../../web/lib/csv.js'
+import { parse, stringify, neutraliseFormula, CsvError } from '../../web/lib/csv.js'
+
+test('neutraliseFormula quotes formula-like cells and leaves numbers and text alone', () => {
+  for (const s of ['=HYPERLINK("http://evil","x")', '+cmd|x', '-2+3', '@SUM(A1)', '\tx', '\r=1', '-$5.00', '=1'])
+    assert.equal(neutraliseFormula(s), `'${s}`, s)
+  for (const s of ['-5', '+1.5', '-1,200.50', '3200', 'Acme = good', '', 'a@b.com'])
+    assert.equal(neutraliseFormula(s), s, s)
+  assert.equal(neutraliseFormula(null), '')
+})
 
 test('parses quoted fields with commas, escaped quotes and embedded CRLF/LF newlines', () => {
   const text = 'name,notes,amount\r\n"Smith, Jane","She said ""hi""",12\r\n"multi\r\nline","lf\nonly",\r\nplain,"",""\n'

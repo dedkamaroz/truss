@@ -18,4 +18,7 @@ Baseline tag: `truss-baseline` - review branch: `review/truss-v1` - landing mode
 
 - Custom formula list to be supplied by the user (goes in `web/lib/formula/custom.js`).
 - Built-in viewers for images/documents (currently opened in external apps).
-- tests/ui-shell/boot.e2e.js:4 ("boots with no module files") fails at line 32 after Wave 3: it expects the "not available" placeholder for database, sheet and notebook types, which now have real modules (spec section 5.2). Update the test to check only types with no module yet. Reported by all three Wave 3 critics; still failing after Wave 4 (confirmed by both Wave 4 critics).
+- Module deletion commits before attachment folders are removed; if removal fails, the folders are orphaned (found by dualcheck, pre-existing). Consider reconciling orphaned folders at startup.
+- Picker titles are unique only on the client (best effort); renames and direct API calls can still create duplicate workbook titles.
+- Script registration accepts UNC paths (\\host\share\x.bat); consider rejecting them (judge caveat).
+- Formula TODAY/NOW use the host timezone while the shell formats as Australia/Sydney (judge, not verified).

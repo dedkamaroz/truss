@@ -163,8 +163,21 @@ function applyModuleUpdate(m) {
   }
 }
 
+/**
+ * "Monthly budget", then "Monthly budget 2", ... so modules made from the picker don't collide in the sidebar or in
+ * [Workbook]Sheet!A1 references. Best effort: renames and direct API calls can still create duplicate titles.
+ */
+function uniqueTitle(base) {
+  const taken = new Set(state.modules.map((m) => m.title.toLowerCase()))
+  let title = base
+  for (let n = 2; taken.has(title.toLowerCase()); n++) title = `${base} ${n}`
+  return title
+}
+
 async function createModule(type, template = 'blank') {
-  const m = await api.post('/api/modules', { type, template })
+  const tpl = state.templates?.find((t) => t.type === type && t.key === template)
+  const title = uniqueTitle(template === 'blank' || !tpl ? 'Untitled' : tpl.name)
+  const m = await api.post('/api/modules', { type, template, title })
   upsertModule(m)
   renderSidebarModules()
   changed('create', m)

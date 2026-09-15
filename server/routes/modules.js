@@ -2,6 +2,9 @@ import crypto from 'node:crypto'
 import { httpError } from '../http.js'
 import { transaction, MODULE_TYPES } from '../db.js'
 
+// An emoji (ZWJ sequences included) or an icon name; long text would break the sidebar and header layout.
+export const MAX_ICON = 32
+
 export function rowToModule(row) {
   if (!row) return null
   let data
@@ -45,7 +48,7 @@ export default function register(router, ctx) {
     const tpl = ctx.templates.get(`${type}:${template}`)
     if (!tpl) throw httpError(400, 'unknown_template', `No "${template}" template for ${type}`)
     if (title != null && typeof title !== 'string') throw httpError(400, 'invalid_title', 'title must be a string')
-    if (icon != null && typeof icon !== 'string') throw httpError(400, 'invalid_icon', 'icon must be a string')
+    if (icon != null && (typeof icon !== 'string' || icon.length > MAX_ICON)) throw httpError(400, 'invalid_icon', `icon must be a string of at most ${MAX_ICON} characters`)
 
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
@@ -70,7 +73,7 @@ export default function register(router, ctx) {
       sets.push('title = ?'), args.push(body.title.trim() || 'Untitled')
     }
     if ('icon' in body) {
-      if (body.icon !== null && typeof body.icon !== 'string') throw httpError(400, 'invalid_icon', 'icon must be a string or null')
+      if (body.icon !== null && (typeof body.icon !== 'string' || body.icon.length > MAX_ICON)) throw httpError(400, 'invalid_icon', `icon must be null or a string of at most ${MAX_ICON} characters`)
       sets.push('icon = ?'), args.push(body.icon || null)
     }
     if ('sort_order' in body) {
@@ -104,7 +107,10 @@ export default function register(router, ctx) {
   router.delete('/api/modules/:id', ({ params }) => {
     load(params.id)
     const ids = q.attachmentIds.all(params.id).map((r) => r.id)
-    q.del.run(params.id)
+    transaction(db, () => {
+      for (const fn of ctx.moduleDeleteHooks) fn(params.id)
+      q.del.run(params.id)
+    })
     ctx.attachments.removeFiles(ids)
     return { ok: true }
   })

@@ -95,8 +95,23 @@ export function createStore(api, moduleId) {
     async refreshRelated(targetId) {
       const rdb = s.related.get(targetId)
       if (!rdb) return
-      const { stamp } = await api.get(`/api/databases/${enc(targetId)}/stamp`).catch(() => ({}))
-      if (!stamp || stamp === rdb.stamp || destroyed) return
+      let gone = false
+      const { stamp } = await api.get(`/api/databases/${enc(targetId)}/stamp`).catch((err) => ((gone = err?.status === 404), {}))
+      if (destroyed) return
+      if (gone) {
+        // The related database was deleted: pick up the server's unlinked relation config, then stop polling it.
+        // If the reload fails, the entry stays so the next poll tries again.
+        try {
+          await s.reload()
+        } catch (err) {
+          console.warn('[database] reload after related database deletion failed', err?.message)
+          return
+        }
+        s.related.delete(targetId)
+        unregisterDb(rdb)
+        return
+      }
+      if (!stamp || stamp === rdb.stamp) return
       if (await fetchRelated(targetId, stamp)) {
         await s.ensureRelated().catch(() => {})
         touchAll()

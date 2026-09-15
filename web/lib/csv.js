@@ -99,4 +99,13 @@ export function stringify(rows, { delimiter = ',', eol = '\r\n', bom = false } =
   return parts.join('')
 }
 
-export default { parse, stringify, CsvError }
+/**
+ * Formula-injection guard for CSV opened in a spreadsheet: a cell starting with = + - @ tab or CR
+ * gets a leading single quote so Excel treats it as text. Plain numbers (-5, +1.5, -1,200.50) are left alone.
+ */
+export function neutraliseFormula(cell) {
+  const s = cell == null ? '' : String(cell)
+  return /^[=+\-@\t\r]/.test(s) && !/^[-+]?\d[\d,]*(\.\d+)?$/.test(s) ? `'${s}` : s
+}
+
+export default { parse, stringify, neutraliseFormula, CsvError }

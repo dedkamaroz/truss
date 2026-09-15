@@ -142,3 +142,25 @@ test('the picker renders at most 50 rows of a large related database, with a nar
   await page.locator('.db-rel-search').fill('Item 17')
   await expect(page.locator('.db-rel-editor .db-rel-row')).toHaveCount(11) // 17, 170-179
 })
+
+test('deleting the related database unlinks the relation and stops polling it', async ({ page }) => {
+  const w = await watch(page)
+  await boot(page)
+  const tasks = await newDb(page, `Tasks ${uid()}`)
+  const [write] = await addRows(page, tasks, [{ Name: 'Write brief' }])
+  const projects = await newDb(page, `Projects ${uid()}`, { Tasks: ['relation', { targetModuleId: tasks.module.id }] })
+  const [launch] = await addRows(page, projects, [{ Name: 'Launch', Tasks: [write.id] }])
+  await open(page, projects)
+  await expect(cell(page, launch.id, projects.P.Tasks.id)).toContainText('Write brief')
+
+  const stampCalls = []
+  page.on('request', (r) => { if (r.url().includes(`/api/databases/${tasks.module.id}/stamp`)) stampCalls.push(r.url()) })
+  await api(page, 'DELETE', `/api/modules/${tasks.module.id}`)
+  await expect(cell(page, launch.id, projects.P.Tasks.id)).not.toContainText('Write brief', { timeout: 6000 })
+  const seen = stampCalls.length
+  await page.waitForTimeout(5000) // more than two poll intervals
+  expect(stampCalls.length).toBe(seen)
+  expect(seen).toBeLessThanOrEqual(1)
+  expect((await load(page, projects.module.id)).properties.find((p) => p.id === projects.P.Tasks.id).config.targetModuleId).toBeNull()
+  expect(w.errors.filter((e) => !e.includes('404'))).toEqual([])
+})

@@ -22,9 +22,10 @@ export const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i
 
-// Keeps only the last path segment, strips reserved/control characters and Windows device names.
+// Drops leading ../ segments and replaces separators with _ (so "report 1/2.pdf" keeps its whole name as
+// "report 1_2.pdf"), then strips reserved/control characters and Windows device names.
 export function sanitizeFilename(name) {
-  let s = String(name ?? '').split(/[\\/]/).pop()
+  let s = String(name ?? '').replace(/^(\.{1,2}[\\/])+/, '').replace(/[\\/]/g, '_')
   s = s.replace(/[<>:"|?*\u0000-\u001f\u007f]/g, '_').replace(/[. ]+$/, '').replace(/^[. ]+/, '')
   if (RESERVED.test(s.split('.')[0].trim())) s = `_${s}`
   if (s.length > 200) {

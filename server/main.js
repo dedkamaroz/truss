@@ -34,11 +34,16 @@ export async function startServer({ port = 4717, dataDir, host = '127.0.0.1' } =
   const token = crypto.randomBytes(24).toString('hex')
   const router = createRouter()
   const templates = new Map() // `${type}:${key}` -> { type, key, name, description, apply }
+  const moduleDeleteHooks = [] // fn(moduleId), run inside the delete transaction before the row goes
   const ctx = {
     db,
     dataDir,
     attachments: createAttachments(db, dataDir),
     templates,
+    moduleDeleteHooks,
+    onModuleDelete(fn) {
+      moduleDeleteHooks.push(fn)
+    },
     registerTemplate(type, key, { name, description = '', apply } = {}) {
       if (!MODULE_TYPES.includes(type)) throw new Error(`registerTemplate: unknown type "${type}"`)
       if (!key || typeof key !== 'string') throw new Error('registerTemplate: key is required')
