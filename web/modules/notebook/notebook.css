@@ -813,23 +813,27 @@ a.nb-crumb:hover {
   white-space: nowrap;
 }
 
+/* In the flex flow (collapsed until hover/focus) so the actions never cover the filename;
+   the name ellipsises into the remaining space instead. */
 .nb-att-actions {
-  position: absolute;
-  top: 50%;
-  right: 6px;
   display: flex;
+  flex: none;
   gap: 1px;
-  padding: 2px;
+  max-width: 0;
+  margin-left: -10px;
+  overflow: hidden;
   border-radius: var(--radius);
   background: var(--color-bg-elevated);
   box-shadow: var(--shadow-sm);
-  transform: translateY(-50%);
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease);
 }
 
 .nb-att:hover .nb-att-actions,
 .nb-att:focus-within .nb-att-actions {
+  max-width: 160px;
+  margin-left: 0;
+  padding: 2px;
   opacity: 1;
 }
 

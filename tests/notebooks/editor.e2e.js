@@ -197,6 +197,41 @@ test('markdown shortcuts, Enter split, Backspace merge, drag reorder and to-do p
   expect(w.errors).toEqual([])
 })
 
+test('Ctrl+K in a block opens only the link dialog, not the shell quick switcher', async ({ page }) => {
+  const w = await watch(page)
+  await boot(page)
+  const { module, p } = await freshPage(page)
+  const ed = blockText(page, 0)
+  await ed.click()
+  await page.keyboard.type('visit site')
+  await ed.evaluate((el) => {
+    const r = document.createRange()
+    r.setStart(el.firstChild, 6)
+    r.setEnd(el.firstChild, 10)
+    getSelection().removeAllRanges()
+    getSelection().addRange(r)
+  })
+  await page.keyboard.press('Control+k')
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog).toContainText('link', { ignoreCase: true })
+  await expect(page.locator('.modal-switcher')).toHaveCount(0)
+  await expect(dialog.getByRole('textbox')).toBeFocused()
+  await page.keyboard.type('https://example.com/k')
+  await page.keyboard.press('Enter')
+  await expect(ed.locator('a')).toHaveAttribute('href', 'https://example.com/k')
+  await expect(ed.locator('a')).toHaveText('site')
+  await expect(page.locator('.modal-switcher')).toHaveCount(0)
+  await saved(page)
+  expect((await storedBlocks(page, module.id, p.id))[0].html).toContain('href="https://example.com/k"')
+
+  // Outside the editor the shell shortcut still works.
+  await page.evaluate(() => document.activeElement?.blur())
+  await page.keyboard.press('Control+k')
+  await expect(page.locator('.modal-switcher')).toHaveCount(1)
+  expect(w.errors).toEqual([])
+})
+
 test('inline formatting via shortcuts and the selection toolbar survives reload; undo/redo covers typing and block operations', async ({ page }) => {
   const w = await watch(page)
   await boot(page)

@@ -522,6 +522,8 @@ export function createBlockEditor({ blocks: input, onChange = () => {}, upload, 
       const strike = e.shiftKey && (key === 's' || key === 'x')
       if (fmt || strike) {
         e.preventDefault()
+        // Keep the shell's document-level Ctrl+K (quick switcher) from also firing.
+        e.stopPropagation()
         format(strike ? 'strike' : fmt)
         return
       }
