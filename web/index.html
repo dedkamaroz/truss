@@ -2,10 +2,22 @@
 <html lang="en-AU">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="truss-token" content="%TRUSS_TOKEN%">
+  <meta name="color-scheme" content="light dark">
   <title>Truss</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles/tokens.css">
+  <link rel="stylesheet" href="/styles/base.css">
+  <link rel="stylesheet" href="/styles/components.css">
+  <link rel="stylesheet" href="/styles/shell.css">
+  <link rel="modulepreload" href="/lib/api.js">
+  <link rel="modulepreload" href="/lib/ui.js">
+  <link rel="modulepreload" href="/lib/icons.js">
+  <link rel="modulepreload" href="/lib/registry.js">
+  <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <div id="app">Truss</div>
+  <div id="app" class="app app-booting" aria-busy="true"></div>
 </body>
 </html>

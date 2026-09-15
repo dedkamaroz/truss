@@ -1,0 +1,180 @@
+/*
+ * Truss design tokens. Every colour in the app comes from this file.
+ * Module stylesheets reuse these custom properties; never hard-code colours elsewhere.
+ */
+:root {
+  /* Typography */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 32px;
+  --leading-tight: 1.25;
+  --leading: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Spacing (4px grid) */
+  --space-0: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Shape */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-full: 999px;
+
+  /* Layout */
+  --sidebar-width: 256px;
+  --topbar-height: 44px;
+  --content-width: 880px;
+  --control-height: 32px;
+  --control-height-sm: 28px;
+  --row-height: 30px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 100ms;
+  --duration: 160ms;
+  --duration-slow: 240ms;
+
+  /* Layers */
+  --z-sticky: 10;
+  --z-menu: 1000;
+  --z-modal: 1100;
+  --z-toast: 1200;
+
+  /* Colours: light theme */
+  color-scheme: light;
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f8f8f7;
+  --color-bg-muted: #f1f1ef;
+  --color-bg-elevated: #ffffff;
+  --color-bg-inset: #fbfbfa;
+  --color-hover: #37352f0d;
+  --color-active: #37352f17;
+  --color-selected: #2383e214;
+  --color-border: #ebebea;
+  --color-border-strong: #dcdcd9;
+  --color-divider: #37352f12;
+  --color-text: #2f2e2b;
+  --color-text-secondary: #5f5e5a;
+  --color-text-muted: #7d7c78;
+  --color-text-faint: #a4a3a0;
+  --color-placeholder: #b3b2ae;
+  --color-accent: #2383e2;
+  --color-accent-hover: #1b72c9;
+  --color-accent-soft: #2383e21a;
+  --color-accent-text: #1c6cbd;
+  --color-on-accent: #ffffff;
+  --color-danger: #d9423a;
+  --color-danger-hover: #c1352e;
+  --color-danger-soft: #d9423a14;
+  --color-danger-text: #c1352e;
+  --color-on-danger: #ffffff;
+  --color-success: #2b8a64;
+  --color-success-soft: #2b8a6417;
+  --color-warning: #cb7b12;
+  --color-warning-soft: #cb7b121a;
+  --color-info: #2383e2;
+  --color-focus-ring: #2383e273;
+  --color-overlay: #0f0f0e59;
+  --color-scrollbar: #37352f29;
+  --color-scrollbar-hover: #37352f47;
+  --color-kbd-bg: #ffffff;
+  --color-tooltip-bg: #2f2e2b;
+  --color-tooltip-text: #ffffff;
+  --color-skeleton: #37352f0f;
+
+  /* Content type tints */
+  --color-type-database: #2f7fc1;
+  --color-type-database-soft: #2f7fc117;
+  --color-type-sheet: #2e8b57;
+  --color-type-sheet-soft: #2e8b5717;
+  --color-type-notebook: #c9731f;
+  --color-type-notebook-soft: #c9731f17;
+  --color-type-other: #7d7c78;
+  --color-type-other-soft: #7d7c7817;
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px #0f0f0e0d;
+  --shadow-sm: 0 1px 2px #0f0f0e0f, 0 1px 3px #0f0f0e0a;
+  --shadow-md: 0 0 0 1px #0f0f0e0d, 0 3px 6px #0f0f0e0d, 0 9px 24px #0f0f0e14;
+  --shadow-lg: 0 0 0 1px #0f0f0e0d, 0 5px 10px #0f0f0e0d, 0 15px 40px #0f0f0e24;
+  --shadow-focus: 0 0 0 3px var(--color-focus-ring);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #191919;
+  --color-bg-subtle: #202020;
+  --color-bg-muted: #2a2a29;
+  --color-bg-elevated: #252525;
+  --color-bg-inset: #1d1d1d;
+  --color-hover: #ffffff0f;
+  --color-active: #ffffff1a;
+  --color-selected: #3b93e826;
+  --color-border: #2e2e2d;
+  --color-border-strong: #3b3b3a;
+  --color-divider: #ffffff12;
+  --color-text: #e8e7e4;
+  --color-text-secondary: #bdbcb8;
+  --color-text-muted: #9a9995;
+  --color-text-faint: #6f6e6b;
+  --color-placeholder: #63625f;
+  --color-accent: #3b93e8;
+  --color-accent-hover: #5aa6ee;
+  --color-accent-soft: #3b93e826;
+  --color-accent-text: #6cb1f0;
+  --color-on-accent: #ffffff;
+  --color-danger: #e5534b;
+  --color-danger-hover: #ee6b63;
+  --color-danger-soft: #e5534b21;
+  --color-danger-text: #f07b74;
+  --color-on-danger: #ffffff;
+  --color-success: #3fb483;
+  --color-success-soft: #3fb48321;
+  --color-warning: #e39a3b;
+  --color-warning-soft: #e39a3b21;
+  --color-info: #3b93e8;
+  --color-focus-ring: #3b93e880;
+  --color-overlay: #00000094;
+  --color-scrollbar: #ffffff21;
+  --color-scrollbar-hover: #ffffff3d;
+  --color-kbd-bg: #2a2a29;
+  --color-tooltip-bg: #e8e7e4;
+  --color-tooltip-text: #191919;
+  --color-skeleton: #ffffff0f;
+
+  --color-type-database: #5aa3e0;
+  --color-type-database-soft: #5aa3e021;
+  --color-type-sheet: #4fb37b;
+  --color-type-sheet-soft: #4fb37b21;
+  --color-type-notebook: #e0914a;
+  --color-type-notebook-soft: #e0914a21;
+  --color-type-other: #9a9995;
+  --color-type-other-soft: #9a999521;
+
+  --shadow-xs: 0 1px 2px #00000033;
+  --shadow-sm: 0 1px 2px #0000004d, 0 1px 3px #00000033;
+  --shadow-md: 0 0 0 1px #ffffff12, 0 3px 6px #0000004d, 0 9px 24px #00000066;
+  --shadow-lg: 0 0 0 1px #ffffff14, 0 5px 10px #00000052, 0 15px 40px #00000080;
+}
