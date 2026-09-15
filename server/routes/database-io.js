@@ -61,6 +61,7 @@ export default function register(router, ctx) {
       if (p.type === 'rollup' || p.type === 'lookup') return
       let type = p.type
       let config = isObj(p.config) ? p.config : undefined
+      if (type === 'list') (type = 'text', config = undefined) // a list only makes sense next to its source: keep its text
       if (type === 'relation') {
         const target = config?.targetModuleId
         const mapped = target && target === srcId ? moduleId : target
@@ -112,6 +113,10 @@ export default function register(router, ctx) {
       const later = []
       for (const [k, v] of Object.entries(r.values || {})) {
         const np = props.get(propIds.get(k))
+        if (np?.type === 'text' && srcById.get(k)?.type === 'list') {
+          if (typeof v?.text === 'string' && v.text) values[np.id] = v.text
+          continue
+        }
         if (!np || np.type !== srcById.get(k)?.type || VALUE_TYPES[np.type].readOnly) continue
         if (np.type === 'files' || (np.type === 'relation' && relationTarget.get(np.id) === moduleId)) later.push({ propId: np.id, type: np.type, ids: v })
         else values[np.id] = v

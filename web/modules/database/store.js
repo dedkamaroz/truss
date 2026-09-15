@@ -7,6 +7,7 @@ import { registerDb, unregisterDb, invalidate } from './relations.js'
 const enc = encodeURIComponent
 const POLL_MS = 2000
 const isRelation = (p) => !!typeOf(p).relation
+const locksRows = (p) => !!typeOf(p).locksRows?.(p)
 const hasComputed = (props) => props.some((p) => typeOf(p).computed)
 
 export function createStore(api, moduleId) {
@@ -27,6 +28,9 @@ export function createStore(api, moduleId) {
     attachments: new Map(), // id -> attachment row
     schemaVersion: 0,
     related: new Map(), // moduleId -> loaded related database { moduleId, module, properties, propById, rows, rowById, stamp }
+
+    /** The list column that decides this database's rows, or null. */
+    rowSource: () => s.properties.find(locksRows) || null,
 
     on(fn) {
       listeners.add(fn)
@@ -113,6 +117,8 @@ export function createStore(api, moduleId) {
       }
       if (!stamp || stamp === rdb.stamp) return
       if (await fetchRelated(targetId, stamp)) {
+        // the list's source changed: the server adds or renames rows here when this database is read
+        if (s.properties.some((p) => locksRows(p) && typeOf(p).target(p) === targetId)) await s.reload().catch(() => {})
         await s.ensureRelated().catch(() => {})
         touchAll()
         emit({ kind: 'related' })
@@ -269,7 +275,7 @@ export function createStore(api, moduleId) {
       try {
         const p = await api.post(`${base}/properties`, data)
         setProperties([...s.properties, p])
-        if (isRelation(p)) await s.reload().catch(() => {})
+        if (isRelation(p) || locksRows(p)) await s.reload().catch(() => {})
         else if (typeOf(p).computed) {
           await s.ensureRelated().catch(() => {}) // a lookup may read a database that isn't loaded yet
           touchAll()
@@ -297,7 +303,7 @@ export function createStore(api, moduleId) {
           const local = s.rowById.get(r.id)
           if (local) (local.values = r.values, touch(local))
         }
-        if (isRelation(prev) || isRelation(property)) await s.reload().catch(() => {})
+        if (isRelation(prev) || isRelation(property) || locksRows(prev) || locksRows(property)) await s.reload().catch(() => {})
         else if (typeOf(property).computed) {
           await s.ensureRelated().catch(() => {})
           touchAll()

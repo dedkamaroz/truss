@@ -159,11 +159,11 @@ export function createTableView(host, ctx) {
         items.push({ kind: 'group', key: `g:${g.key}`, group: g, prop: gp, collapsed: isCollapsed })
         if (isCollapsed) continue
         for (const row of g.rows) items.push({ kind: 'row', key: row.id, row, group: g })
-        items.push({ kind: 'add', key: `a:${g.key}`, group: g, prop: gp })
+        if (!store.rowSource()) items.push({ kind: 'add', key: `a:${g.key}`, group: g, prop: gp })
       }
     } else {
       for (const row of rows) items.push({ kind: 'row', key: row.id, row })
-      items.push({ kind: 'add', key: 'a:', group: null })
+      if (!store.rowSource()) items.push({ kind: 'add', key: 'a:', group: null })
     }
     virtual.setItems(items, (it) => (it.kind === 'group' ? GROUP_H : ROW_H))
     scroller.classList.toggle('is-grouped', !!gp)

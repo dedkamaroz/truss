@@ -534,26 +534,29 @@ function dialogFooter(close, confirmLabel, onConfirm) {
   return { el: h('div', { class: 'modal-footer' }, h('button', { type: 'button', class: 'btn btn-secondary', onClick: () => close(null) }, h('span', { class: 'btn-label' }, 'Cancel')), confirm), confirm }
 }
 
-/** Choose the related database and two-way sync. Resolves { targetModuleId, twoWay } or null. */
-export async function relationSetup({ store, current }) {
+/**
+ * Choose the related database and two-way sync. Resolves { targetModuleId, twoWay } or null.
+ * With list: choose the database a list column comes from (not this one, no two-way). Resolves { sourceModuleId } or null.
+ */
+export async function relationSetup({ store, current, list = false }) {
   let modules
   try {
-    modules = (await api.get('/api/modules')).filter((m) => m.type === 'database')
+    modules = (await api.get('/api/modules')).filter((m) => m.type === 'database' && !(list && m.id === store.moduleId))
   } catch (e) {
     toast(e?.message || 'Could not load databases', { type: 'error' })
     return null
   }
-  let picked = current?.targetModuleId || null
+  let picked = (list ? current?.sourceModuleId : current?.targetModuleId) || null
   const twoWay = h('input', { type: 'checkbox', class: 'db-switch db-rel-twoway', checked: current ? !!current.twoWay : true, 'aria-label': 'Two-way relation' })
   const search = h('input', { class: 'input input-sm db-rel-db-search', type: 'search', placeholder: 'Search databases', 'aria-label': 'Search databases', spellcheck: 'false' })
-  const list = h('div', { class: 'db-rel-dbs', role: 'listbox', 'aria-label': 'Databases' })
+  const listEl = h('div', { class: 'db-rel-dbs', role: 'listbox', 'aria-label': 'Databases' })
   const twoWayText = h('span', { class: 'db-rel-twoway-text' })
   let footer
   const nameOf = (m) => (m.id === store.moduleId ? `${m.title} (this database)` : m.title)
   function render() {
     const q = lower(search.value.trim())
     const shown = modules.filter((m) => !q || lower(m.title).includes(q))
-    list.replaceChildren(...shown.map((m) => h('button', {
+    listEl.replaceChildren(...shown.map((m) => h('button', {
       type: 'button', class: `db-rel-db${m.id === picked ? ' is-selected' : ''}`, role: 'option', 'aria-selected': String(m.id === picked), dataset: { moduleId: m.id },
       onClick: () => { picked = m.id; render() },
     }, h('span', { class: 'db-rel-db-icon' }, m.icon ? h('span', { class: 'db-rel-emoji' }, m.icon) : icon('database', { size: 16 })),
@@ -566,15 +569,17 @@ export async function relationSetup({ store, current }) {
   }
   search.addEventListener('input', render)
   const body = h('div', { class: 'db-dialog db-rel-setup' },
-    search, list,
-    h('label', { class: 'db-rel-twoway' }, twoWayText, twoWay))
+    search, listEl,
+    list ? h('p', { class: 'db-dialog-help' }, 'This database gets one row per row there, kept in step as rows are added or renamed. Other columns stay editable.')
+      : h('label', { class: 'db-rel-twoway' }, twoWayText, twoWay))
   render()
+  const result = () => (list ? { sourceModuleId: picked } : { targetModuleId: picked, twoWay: twoWay.checked })
   return modal({
-    title: current ? 'Relation settings' : 'New relation',
-    description: 'Link rows to rows in another database, or in this one.',
+    title: list ? (current ? 'List settings' : 'New list column') : current ? 'Relation settings' : 'New relation',
+    description: list ? 'Fill this database with the rows of another database.' : 'Link rows to rows in another database, or in this one.',
     size: 'md', className: 'db-modal db-relation-modal', actions: [], body,
     onOpen: ({ close, dialog }) => {
-      footer = dialogFooter(close, current ? 'Save' : 'Create relation', () => picked && close({ targetModuleId: picked, twoWay: twoWay.checked }))
+      footer = dialogFooter(close, list ? (current ? 'Save' : 'Create list') : current ? 'Save' : 'Create relation', () => picked && close(result()))
       footer.confirm.disabled = !picked
       dialog.append(footer.el)
       search.focus()

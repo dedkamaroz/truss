@@ -333,3 +333,110 @@ describe('lookup properties', () => {
     for (const id of [details.m.id, imported.module.id]) await ok('DELETE', `/api/modules/${id}`)
   })
 })
+
+describe('list properties', () => {
+  const titles = (d) => d.rows.map((r) => r.values[d.properties.find((p) => p.type === 'title').id])
+
+  test('rows follow the source: added, renamed (title follows unless edited), deleted rows kept; creation and in-source deletes refused', async () => {
+    const cities = await newDb('List cities')
+    const { created: [syd, mel, dar] } = await ok('POST', `${cities.base}/rows/batch`, { create: ['Sydney', 'Melbourne', 'Darwin'].map((n) => ({ values: { [cities.titleId]: n } })) })
+    const offices = await newDb('List offices')
+    const note = await ok('POST', `${offices.base}/properties`, { name: 'Note', type: 'text' })
+    const list = await ok('POST', `${offices.base}/properties`, { name: 'City', type: 'list', config: { sourceModuleId: cities.m.id } })
+    assert.deepEqual(list.config, { sourceModuleId: cities.m.id, sourceDeleted: false })
+    let d = await offices.load()
+    assert.deepEqual(titles(d), ['Sydney', 'Melbourne', 'Darwin'])
+    const row = (srcId) => d.rows.find((r) => r.values[list.id]?.id === srcId)
+    assert.deepEqual(row(syd.id).values[list.id], { id: syd.id, text: 'Sydney' })
+
+    // other columns are editable; the list column and new rows are not
+    await ok('PATCH', `${offices.base}/rows/${row(syd.id).id}`, { values: { [note.id]: 'HQ' } })
+    await fail('PATCH', `${offices.base}/rows/${row(syd.id).id}`, { values: { [list.id]: { id: mel.id, text: 'x' } } })
+    const refused = await fail('POST', `${offices.base}/rows`, {})
+    assert.equal(refused.error.code, 'rows_from_list')
+    await fail('POST', `${offices.base}/rows/batch`, { create: [{}] })
+
+    // source changes reach the list database the next time it is read
+    await ok('POST', `${cities.base}/rows`, { values: { [cities.titleId]: 'Hobart' } })
+    await ok('PATCH', `/api/databases/${offices.m.id}/rows/${row(mel.id).id}`, { values: { [offices.titleId]: 'Melbourne office' } })
+    await ok('PATCH', `${cities.base}/rows/${syd.id}`, { values: { [cities.titleId]: 'Sydney CBD' } })
+    await ok('PATCH', `${cities.base}/rows/${mel.id}`, { values: { [cities.titleId]: 'Naarm' } })
+    d = await offices.load()
+    assert.deepEqual(titles(d), ['Sydney CBD', 'Melbourne office', 'Darwin', 'Hobart'], 'renamed title follows; edited title is kept')
+    assert.equal(row(mel.id).values[list.id].text, 'Naarm')
+    assert.equal(row(syd.id).values[note.id], 'HQ')
+
+    // a deleted source row: its row stays and can now be deleted; rows still in the source can't be
+    await ok('DELETE', `${cities.base}/rows/${dar.id}`)
+    d = await offices.load()
+    assert.ok(row(dar.id), 'row kept after its source row was deleted')
+    const inSource = await fail('DELETE', `${offices.base}/rows/${row(syd.id).id}`)
+    assert.equal(inSource.error.code, 'row_in_list')
+    await ok('DELETE', `${offices.base}/rows/${row(dar.id).id}`)
+    assert.deepEqual(titles(await offices.load()), ['Sydney CBD', 'Melbourne office', 'Hobart'])
+
+    // a refused batch delete changes nothing, including attachment files of rows earlier in the batch
+    const gone = (await offices.load()).rows.find((r) => r.values[offices.titleId] === 'Hobart')
+    await ok('DELETE', `${cities.base}/rows/${gone.values[list.id].id}`)
+    const upload = await t.call('POST', `/api/attachments?moduleId=${offices.m.id}&pageId=${gone.id}`, { headers: { 'X-Filename': 'note.txt', 'Content-Type': 'application/octet-stream' }, body: 'kept' })
+    assert.equal(upload.status, 201)
+    await fail('POST', `${offices.base}/rows/batch`, { delete: [gone.id, row(syd.id).id] })
+    assert.equal((await t.call('GET', `/api/attachments/${upload.json.id}/content`)).text, 'kept')
+    assert.ok((await offices.load()).rows.some((r) => r.id === gone.id))
+
+    // the stamp endpoint syncs too, so polling clients see new source rows
+    const before = (await ok('GET', `${offices.base}/stamp`)).stamp
+    await ok('POST', `${cities.base}/rows`, { values: { [cities.titleId]: 'Perth' } })
+    assert.notEqual((await ok('GET', `${offices.base}/stamp`)).stamp, before)
+    for (const id of [offices.m.id, cities.m.id]) await ok('DELETE', `/api/modules/${id}`)
+  })
+
+  test('validation, matching existing rows by title, changing source, deleting the source, JSON import', async () => {
+    const a = await newDb('List source A')
+    const b = await newDb('List source B')
+    await ok('POST', `${a.base}/rows/batch`, { create: ['Canberra', 'Perth'].map((n) => ({ values: { [a.titleId]: n } })) })
+    await ok('POST', `${b.base}/rows/batch`, { create: ['Perth', 'Brisbane'].map((n) => ({ values: { [b.titleId]: n } })) })
+    const target = await newDb('List target')
+    await ok('POST', `${target.base}/rows/batch`, { create: ['perth', 'Elsewhere'].map((n) => ({ values: { [target.titleId]: n } })) })
+    const notebook = await ok('POST', '/api/modules', { type: 'notebook' })
+    await fail('POST', `${target.base}/properties`, { name: 'L', type: 'list', config: {} })
+    await fail('POST', `${target.base}/properties`, { name: 'L', type: 'list', config: { sourceModuleId: target.m.id } })
+    await fail('POST', `${target.base}/properties`, { name: 'L', type: 'list', config: { sourceModuleId: notebook.id } })
+
+    const list = await ok('POST', `${target.base}/properties`, { name: 'City', type: 'list', config: { sourceModuleId: a.m.id } })
+    await fail('POST', `${target.base}/properties`, { name: 'Second', type: 'list', config: { sourceModuleId: b.m.id } }, 400)
+    let d = await target.load()
+    assert.deepEqual(titles(d), ['perth', 'Elsewhere', 'Canberra'], 'perth matched (title kept), Canberra added, Elsewhere left unlinked')
+    assert.equal(d.rows[0].values[list.id].text, 'Perth')
+    assert.equal(d.rows[1].values[list.id], undefined)
+
+    // a new source: rows are matched again by title
+    await ok('PATCH', `${target.base}/properties/${list.id}`, { config: { sourceModuleId: b.m.id } })
+    d = await target.load()
+    assert.deepEqual(titles(d), ['perth', 'Elsewhere', 'Canberra', 'Brisbane'])
+    assert.equal(d.rows.find((r) => r.values[target.titleId] === 'Canberra').values[list.id], undefined, 'no longer linked')
+
+    // JSON import keeps the list's text as a plain text column
+    const exported = { truss: 1, database: { title: 'List copy', properties: d.properties, rows: d.rows, views: d.views } }
+    const copy = await ok('POST', '/api/databases/import', JSON.parse(JSON.stringify(exported)), 201)
+    const cd = await ok('GET', `/api/databases/${copy.module.id}`)
+    const city = cd.properties.find((p) => p.name === 'City')
+    assert.equal(city.type, 'text')
+    assert.equal(cd.rows[0].values[city.id], 'Perth')
+
+    // no chains or cycles: a list database can't be a source, and a source can't get a list
+    const third = await newDb('List third')
+    await fail('POST', `${third.base}/properties`, { name: 'L', type: 'list', config: { sourceModuleId: target.m.id } })
+    await fail('POST', `${b.base}/properties`, { name: 'L', type: 'list', config: { sourceModuleId: a.m.id } })
+
+    // deleting the source keeps rows and unlocks new ones; the orphaned column can still be renamed
+    await ok('DELETE', `/api/modules/${b.m.id}`)
+    d = await target.load()
+    assert.deepEqual(d.properties.find((p) => p.id === list.id).config, { sourceModuleId: null, sourceDeleted: true })
+    assert.equal(d.rows.length, 4)
+    await ok('POST', `${target.base}/rows`, {})
+    assert.equal((await ok('PATCH', `${target.base}/properties/${list.id}`, { name: 'Old city', width: 240 })).property.name, 'Old city')
+    await ok('DELETE', `/api/modules/${third.m.id}`)
+    for (const id of [a.m.id, target.m.id, copy.module.id, notebook.id]) await ok('DELETE', `/api/modules/${id}`)
+  })
+})

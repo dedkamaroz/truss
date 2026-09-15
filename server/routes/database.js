@@ -11,7 +11,7 @@ export const ROLLUP_FNS = ['count', 'count_values', 'count_unique', 'sum', 'aver
   'percent_checked', 'percent_empty', 'earliest_date', 'latest_date', 'show_original']
 const OPTION_TYPES = new Set(['select', 'multi_select', 'status'])
 const STRING_TYPES = new Set(['title', 'text', 'url', 'email', 'phone'])
-const READ_ONLY = new Set(['created_time', 'last_edited_time', 'rollup', 'formula', 'lookup'])
+const READ_ONLY = new Set(['created_time', 'last_edited_time', 'rollup', 'formula', 'lookup', 'list'])
 const MAX_TEXT = 100_000
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 
@@ -143,6 +143,8 @@ export const VALUE_TYPES = {
   formula: { readOnly: true },
   // Computed in the browser: the first row of another database whose match column equals this row's search column.
   lookup: { readOnly: true },
+  // { id, text }: a row of the source database and its last known title. Written only by syncList.
+  list: { readOnly: true },
   created_time: { readOnly: true },
   last_edited_time: { readOnly: true },
 }
@@ -173,7 +175,7 @@ const optId = (v) => (v == null || v === '' ? null : typeof v === 'string' ? v :
 function normaliseConfig(type, config, prev = {}) {
   if (config != null && !isObj(config)) throw bad('invalid_config', 'config must be an object')
   // Computed and relation configs merge partial patches; other types replace the config whole.
-  const merge = type === 'relation' || type === 'rollup' || type === 'formula' || type === 'lookup'
+  const merge = type === 'relation' || type === 'rollup' || type === 'formula' || type === 'lookup' || type === 'list'
   const c = merge ? { ...prev, ...config } : { ...(config ?? prev) }
   if (OPTION_TYPES.has(type)) {
     if (c.options == null) c.options = type === 'status' ? DEFAULT_STATUS() : []
@@ -215,6 +217,11 @@ function normaliseConfig(type, config, prev = {}) {
     }
     return out
   }
+  if (type === 'list') {
+    const source = optId(c.sourceModuleId)
+    if (source === undefined) throw bad('invalid_config', 'sourceModuleId must be a database id')
+    return { sourceModuleId: source, sourceDeleted: source ? false : prev.sourceDeleted === true }
+  }
   if (type === 'formula') {
     const expression = c.expression ?? ''
     if (typeof expression !== 'string' || expression.length > 10_000) throw bad('invalid_config', 'expression must be text up to 10,000 characters')
@@ -238,6 +245,7 @@ function valueToText(type, v, config, ctx) {
     case 'multi_select': return v.map((id) => config.options?.find((o) => o.id === id)?.name).filter(Boolean).join(', ')
     case 'date': return v.end ? `${fmtDate(v.start)} - ${fmtDate(v.end)}` : fmtDate(v.start)
     case 'files': return v.map((id) => ctx.attachments.get(id)?.filename).filter(Boolean).join(', ')
+    case 'list': return typeof v?.text === 'string' ? v.text : ''
     default: return typeof v === 'string' ? v : ''
   }
 }
@@ -326,6 +334,8 @@ function createService(ctx) {
     prop: db.prepare('SELECT * FROM db_properties WHERE id = ? AND module_id = ?'),
     propAny: db.prepare('SELECT * FROM db_properties WHERE id = ?'),
     relationsTo: db.prepare("SELECT * FROM db_properties WHERE type = 'relation' AND json_extract(config, '$.targetModuleId') = ?"),
+    listsFrom: db.prepare("SELECT * FROM db_properties WHERE type = 'list' AND json_extract(config, '$.sourceModuleId') = ?"),
+    listProp: db.prepare("SELECT * FROM db_properties WHERE module_id = ? AND type = 'list'"),
     lookupsTo: db.prepare("SELECT * FROM db_properties WHERE type = 'lookup' AND json_extract(config, '$.targetModuleId') = ?"),
     insertProp: db.prepare('INSERT INTO db_properties (id, module_id, name, type, config, sort_order, width) VALUES (?, ?, ?, ?, ?, ?, ?)'),
     setPropConfig: db.prepare('UPDATE db_properties SET config = ? WHERE id = ?'),
@@ -394,6 +404,83 @@ function createService(ctx) {
     if (!targetModuleId) return
     const m = q.module.get(targetModuleId)
     if (!m || m.type !== 'database') throw bad('invalid_config', 'targetModuleId must be an existing database')
+  }
+
+  /* ---- list columns */
+
+  function checkList(moduleId, config, propId = null) {
+    if (!config.sourceModuleId) throw bad('invalid_config', 'Choose the database the list comes from')
+    if (config.sourceModuleId === moduleId) throw bad('invalid_config', 'A list cannot come from its own database')
+    checkTarget(config.sourceModuleId)
+    const other = q.listProp.get(moduleId)
+    if (other && other.id !== propId) throw bad('duplicate_list', 'A database can have one list column')
+    // No chains: a list can't come from a list database, and a list's source can't get a list (this also rules out cycles).
+    if (q.listProp.get(config.sourceModuleId)) throw bad('invalid_config', 'A list cannot come from a database that is itself filled from a list')
+    if (q.listsFrom.all(moduleId).length) throw bad('invalid_config', 'Another database is filled from this one, so it cannot be filled from a list itself')
+  }
+
+  /** The database's list property while it is linked to a source database, else null. */
+  const activeList = (moduleId) => {
+    const r = q.listProp.get(moduleId)
+    const p = r && propOut(r)
+    return p?.config.sourceModuleId && q.module.get(p.config.sourceModuleId)?.type === 'database' ? p : null
+  }
+
+  /**
+   * Makes a list database follow its source: one row per source row (added with the source title as its title),
+   * stored text and untouched titles follow renames, unlinked rows are matched by title. Rows whose source row
+   * is gone are left alone (the browser flags them). Returns true when anything was written.
+   * ponytail: full scan of both databases per call (reads and polls); keep a source stamp per list if it gets slow.
+   */
+  function syncList(moduleId) {
+    const list = activeList(moduleId)
+    if (!list) return false
+    const sourceId = list.config.sourceModuleId
+    const srcTitle = q.props.all(sourceId).map(propOut).find((p) => p.type === 'title')
+    const title = q.props.all(moduleId).map(propOut).find((p) => p.type === 'title')
+    const sourceRows = q.rows.all(sourceId).map((r) => ({ id: r.id, text: srcTitle ? String(parseJson(r.values, {})[srcTitle.id] ?? '') : '' }))
+    const linked = new Map()
+    const unlinked = new Map() // lowercased title -> first unlinked row
+    for (const r of q.rows.all(moduleId).map(rowOut)) {
+      const v = r.values[list.id]
+      if (v?.id) linked.set(v.id, r)
+      else {
+        const key = String(r.values[title?.id] ?? '').trim().toLowerCase()
+        if (key && !unlinked.has(key)) unlinked.set(key, r)
+      }
+    }
+    const ts = now()
+    let order = q.maxRowOrder.get(moduleId).m
+    let changed = false
+    const setTitle = (values, text) => {
+      if (!title) return
+      if (text) values[title.id] = text
+      else delete values[title.id]
+    }
+    for (const src of sourceRows) {
+      const row = linked.get(src.id)
+      if (row) {
+        const old = row.values[list.id]
+        if (old.text === src.text) continue
+        const values = { ...row.values, [list.id]: { id: src.id, text: src.text } }
+        if ((row.values[title?.id] ?? '') === old.text) setTitle(values, src.text)
+        q.touchRowValues.run(JSON.stringify(values), ts, row.id)
+        changed = true
+        continue
+      }
+      const key = src.text.trim().toLowerCase()
+      const match = key && unlinked.get(key)
+      if (match) {
+        unlinked.delete(key)
+        q.touchRowValues.run(JSON.stringify({ ...match.values, [list.id]: { id: src.id, text: src.text } }), ts, match.id)
+      } else {
+        const values = { [list.id]: { id: src.id, text: src.text } }
+        setTitle(values, src.text)
+        q.insertRow.run(uuid(), moduleId, ++order, JSON.stringify(values), '', ts, ts)
+      }
+      changed = true
+    }
+    return changed
   }
 
   /** A lookup's columns must belong to the right databases: search column here, match and return columns in the target. */
@@ -483,6 +570,10 @@ function createService(ctx) {
 
   /** Before a module is deleted: relations in other databases that point at it are unlinked and their values cleared. */
   function unlinkTarget(moduleId) {
+    for (const prop of q.listsFrom.all(moduleId)) {
+      if (prop.module_id === moduleId) continue
+      q.setPropConfig.run(JSON.stringify({ sourceModuleId: null, sourceDeleted: true }), prop.id)
+    }
     for (const prop of q.lookupsTo.all(moduleId)) {
       if (prop.module_id === moduleId) continue
       const config = parseJson(prop.config, {})
@@ -523,11 +614,13 @@ function createService(ctx) {
     const cfg = normaliseConfig(type, config)
     if (type === 'relation') checkTarget(cfg.targetModuleId)
     if (type === 'lookup') checkLookup(moduleId, cfg)
+    if (type === 'list') checkList(moduleId, cfg)
     const twoWay = type === 'relation' && cfg.twoWay && cfg.targetModuleId
     if (type === 'relation') cfg.twoWay = false // enabled by createReverse
     q.insertProp.run(id, moduleId, nameOf(name, defaultName(type, props)), type, JSON.stringify(cfg), sort_order ?? q.maxPropOrder.get(moduleId).m + 1,
       Math.round(width ?? (type === 'title' ? 280 : 200)))
     if (twoWay) createReverse(propOut(q.prop.get(id, moduleId)), { name: typeof reverseName === 'string' ? reverseName.trim() : '' })
+    if (type === 'list') syncList(moduleId)
     return propOut(q.prop.get(id, moduleId))
   }
 
@@ -554,8 +647,20 @@ function createService(ctx) {
       config.options = config.options.map((o) => ({ ...o, group: o.group || 'todo' }))
     }
     if (type === 'lookup') checkLookup(moduleId, config)
+    // an orphaned list (source database deleted) can still be renamed, resized or reordered
+    if (type === 'list' && !(prop.type === 'list' && !config.sourceModuleId && config.sourceDeleted)) checkList(moduleId, config, prop.id)
     const changedRows = []
     const rows = q.rows.all(moduleId)
+    if (type === 'list' && prop.type === 'list' && prop.config.sourceModuleId !== config.sourceModuleId) {
+      // a new source: links to the old one mean nothing, so rows are matched again by title
+      for (const r of rows) {
+        const values = parseJson(r.values, {})
+        if (!(prop.id in values)) continue
+        delete values[prop.id]
+        q.setRowValues.run(JSON.stringify(values), r.id)
+        r.values = JSON.stringify(values)
+      }
+    }
     const oldReverse = reverseOf(prop)
     let wantReverse = false
     if (type === 'relation') {
@@ -608,6 +713,7 @@ function createService(ctx) {
     db.prepare('UPDATE db_properties SET name = ?, type = ?, config = ?, width = ?, sort_order = ? WHERE id = ?')
       .run(nameOf(body.name, prop.name), type, JSON.stringify(config), Math.round(body.width ?? prop.width), body.sort_order ?? prop.sort_order, prop.id)
     if (wantReverse) createReverse(loadProp(moduleId, prop.id), { name: typeof body.reverseName === 'string' ? body.reverseName.trim() : '' })
+    if (type === 'list') syncList(moduleId)
     return { property: loadProp(moduleId, prop.id), rows: changedRows }
   }
 
@@ -666,6 +772,8 @@ function createService(ctx) {
 
   function insertRow(moduleId, props, input, order, ts, { createdAt, updatedAt } = {}) {
     if (!isObj(input)) throw bad('invalid_row', 'each row must be an object')
+    const list = [...props.values()].find((p) => p.type === 'list' && p.config.sourceModuleId)
+    if (list) throw bad('rows_from_list', `Rows in this database come from "${q.module.get(list.config.sourceModuleId)?.title || 'another database'}". Add them there.`)
     checkNotes(input.notes)
     if (input.sort_order != null && !Number.isFinite(input.sort_order)) throw bad('invalid_sort_order', 'sort_order must be a number')
     const values = cleanValues(moduleId, input.values, props)
@@ -695,8 +803,15 @@ function createService(ctx) {
 
   function deleteRows(moduleId, ids) {
     if (!ids.length) return
+    const list = activeList(moduleId)
+    // validate every row before deleting any: attachment files are removed right away and don't roll back
     for (const id of ids) {
-      loadRow(moduleId, id)
+      const link = loadRow(moduleId, id).values[list?.id]
+      if (link?.id && q.row.get(link.id, list.config.sourceModuleId)) {
+        throw bad('row_in_list', `"${link.text || 'This row'}" is still in "${q.module.get(list.config.sourceModuleId).title}". Delete it there instead.`)
+      }
+    }
+    for (const id of ids) {
       q.deleteRow.run(id)
       ctx.attachments.removeFor({ moduleId, pageId: id })
     }
@@ -717,6 +832,7 @@ function createService(ctx) {
   /** Cheap change fingerprint for polling clients (rows, properties and title). */
   function stamp(moduleId) {
     const m = loadModule(moduleId)
+    transaction(db, () => syncList(moduleId))
     const r = q.stampRows.get(moduleId)
     const p = q.stampProps.get(moduleId)
     return crypto.createHash('sha1').update(`${m.title}|${r.n}|${r.u}|${r.s}|${p.p}`).digest('hex')
@@ -724,7 +840,10 @@ function createService(ctx) {
 
   function snapshot(moduleId) {
     const module = loadModule(moduleId)
-    transaction(db, () => ensureInitialised(module.id))
+    transaction(db, () => {
+      ensureInitialised(module.id)
+      syncList(module.id)
+    })
     return {
       module: { ...module, data: parseJson(module.data, {}) },
       properties: q.props.all(module.id).map(propOut),
@@ -736,7 +855,7 @@ function createService(ctx) {
   return {
     q, db, propOut, rowOut, viewOut, loadModule, loadProp, loadRow, loadView, nameOf, uniqueName, propMap,
     createProperty, updateProperty, deleteProperty, createView, ensureInitialised, createReverse, reverseOf,
-    cleanValues, insertRow, patchRow, deleteRows, reorder, stamp, snapshot, checkTarget, unlinkTarget,
+    cleanValues, insertRow, patchRow, deleteRows, reorder, stamp, snapshot, checkTarget, unlinkTarget, syncList,
   }
 }
 

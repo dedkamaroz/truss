@@ -186,6 +186,33 @@ const options = (prop) => prop.config?.options || []
 const serialOfDay = (iso) => formulaDateSerial(iso)
 const formulaNumber = new Intl.NumberFormat('en-AU', { maximumFractionDigits: 4 })
 
+/* ---- list helpers */
+
+const listSource = (prop) => dbFor(prop.config?.sourceModuleId)
+/** The source row's current title when the source is loaded, else the text stored with the link. */
+function listText(v, prop) {
+  const src = listSource(prop)
+  const row = v?.id && src?.rowById.get(v.id)
+  if (row) {
+    const title = src.properties.find((p) => p.type === 'title')
+    return (title && row.values[title.id]) || ''
+  }
+  return v?.text ?? ''
+}
+/** True when a row no longer has a source row: the source row or the whole source database was deleted. */
+function listMissing(v, prop) {
+  if (prop.config?.sourceDeleted) return true
+  const src = listSource(prop)
+  if (!src) return false // not loaded yet
+  return !v?.id || !src.rowById.has(v.id)
+}
+const listMissingLabel = (prop) => (prop.config?.sourceDeleted ? 'Source deleted' : 'Removed')
+const listMissingHelp = (prop) => `${prop.config?.sourceDeleted ? 'The database this list came from was deleted.' : `No longer in "${listSource(prop)?.module?.title || 'the list'}".`} The row stays with its other values, and you can delete it.`
+const listOps = {
+  ...Object.fromEntries(Object.entries(textOps).map(([k, o]) => [k, { ...o, test: (v, a, prop) => o.test(listText(v, prop), a, prop) }])),
+  missing: { label: 'is no longer in the list', input: 'none', test: (v, a, prop) => listMissing(v, prop) },
+}
+
 /* ---- relation, rollup and formula helpers */
 
 const relationText = (v, prop) => relatedTitles(prop, v).join(', ')
@@ -414,6 +441,36 @@ export const TYPES = {
         { label: 'Calculate', value: rollupFn(prop).label, cls: 'db-rollup-fn-item', onClick: () => openSetupMenu(null, prop, ctx) },
       ]
     },
+  },
+  list: {
+    label: 'List from database', icon: 'database', readOnly: true, defaultWidth: 200,
+    target: (prop) => prop.config?.sourceModuleId,
+    locksRows: (prop) => !!prop.config?.sourceModuleId,
+    get: (row, prop) => row.values[prop.id],
+    text: (v, prop) => listText(v, prop),
+    compare: (a, b, prop) => collator.compare(listText(a, prop), listText(b, prop)),
+    filters: listOps,
+    serialise: (v, prop) => listText(v, prop),
+    formula: (v, prop) => listText(v, prop) || null,
+    render: (v, prop) => {
+      const text = listText(v, prop)
+      const missing = listMissing(v, prop)
+      if (!text && !missing) return null
+      if (!v && !text && prop.config?.sourceDeleted) return null // rows added after the source was deleted
+      return h('span', { class: 'db-list-value' }, text ? h('span', { class: 'db-text' }, text) : null,
+        missing ? h('span', { class: 'db-list-missing', title: listMissingHelp(prop) }, listMissingLabel(prop)) : null)
+    },
+    setup: (o) => relationSetup({ ...o, list: true }),
+    menuItems: (prop, ctx) => [{
+      label: 'Comes from', value: prop.config?.sourceDeleted ? 'Source deleted' : listSource(prop)?.module?.title || 'Not set', cls: 'db-list-source',
+      onClick: async () => {
+        const config = await relationSetup({ store: ctx.store, current: prop.config, list: true })
+        if (!config || config.sourceModuleId === prop.config?.sourceModuleId) return
+        if (!(await confirmDialog({ title: 'Change where the list comes from?', message: 'Rows are matched to the new database by title. Rows that match nothing stay, flagged. Missing rows are added.', confirmLabel: 'Change' }))) return
+        ctx.store.updateProperty(prop.id, { config }).catch(() => {})
+      },
+    }],
+    deleteMessage: (prop) => `Rows are kept with their other values, and this database stops following ${listSource(prop)?.module?.title ? `"${listSource(prop).module.title}"` : 'the list'}. This cannot be undone.`,
   },
   lookup: {
     label: 'Lookup', icon: 'search', readOnly: true, computed: true, defaultWidth: 180,

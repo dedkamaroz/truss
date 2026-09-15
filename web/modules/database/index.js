@@ -59,7 +59,14 @@ function mount(el, mctx) {
     setConfig: (patch) => store.setViewConfig(view().id, patch),
     openRow: (rowId, opts) => openPeek(rowId, opts),
     rowMenu,
-    addRow: (values) => store.createRow({ values }).catch(() => null),
+    addRow: (values) => {
+      const source = store.rowSource()
+      if (source) {
+        toast(`Rows come from the "${source.name}" list. Add them to its database instead.`)
+        return Promise.resolve(null)
+      }
+      return store.createRow({ values }).catch(() => null)
+    },
     openFilter: (propId) => filterMenu(els.filterBtn, ctx, { addFor: propId }),
   }
 
@@ -114,7 +121,7 @@ function mount(el, mctx) {
       { label: 'Export database as JSON', icon: 'download', onClick: () => exportJson(ctx) },
       'divider',
       { header: 'Import' },
-      { label: 'Import CSV into this database', icon: 'upload', onClick: async () => { const f = await pickFile('.csv,text/csv'); if (f) importIntoDatabase(ctx, f) } },
+      { label: 'Import CSV into this database', icon: 'upload', disabled: !!store.rowSource(), onClick: async () => { const f = await pickFile('.csv,text/csv'); if (f) importIntoDatabase(ctx, f) } },
       { label: 'Import as a new database', icon: 'upload', onClick: async () => { const f = await pickFile('.csv,.json,text/csv,application/json'); if (f) importNewDatabase(f, { navigate }) } },
     ], { align: 'end' }))
     els.newBtn = h('button', { type: 'button', class: 'btn btn-primary btn-sm db-new' }, icon('plus', { size: 14 }), h('span', { class: 'btn-label' }, 'New'))
@@ -196,6 +203,7 @@ function mount(el, mctx) {
     els.coverBtn.hidden = v.type !== 'gallery'
     if (document.activeElement !== els.search) els.search.value = c.search || ''
     els.searchWrap.classList.toggle('is-active', !!c.search)
+    root.classList.toggle('is-rows-locked', !!store.rowSource())
     const hidden = (c.hidden || []).filter((id) => store.propById.has(id)).length
     els.propsBtn.classList.toggle('is-active', hidden > 0)
   }
