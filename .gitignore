@@ -3,3 +3,9 @@ data/
 test-results/
 playwright-report/
 .claude/worktrees/
+
+# Hosting design and plan. They describe the private server Truss is deployed
+# onto - its hostname, auth scheme and volume layout - and this repository is
+# public. Kept on disk, deliberately untracked.
+docs/2026-09-16-hosted-module-design.md
+docs/plans/2026-09-16-hosted-truss.md
