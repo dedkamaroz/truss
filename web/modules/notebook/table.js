@@ -1,8 +1,8 @@
 // Table editor used for table-style pages and for table blocks inside text pages.
 // Data shape: { columns: [{ id, name, width }], rows: [{ id, cells: { [columnId]: string } }] }, edited in place.
 
-import { h, menu } from '/lib/ui.js'
-import { icon } from '/lib/icons.js'
+import { h, menu } from '../../lib/ui.js'
+import { icon } from '../../lib/icons.js'
 import { bid, caretOffset, selectionEndOffset, setCaret } from './util.js'
 
 const MIN_WIDTH = 64

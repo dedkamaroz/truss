@@ -1,12 +1,12 @@
 // Notebook content type: page tree + page view (block editor or full-page table), attachments and page actions.
 
-import { h, confirmDialog, emojiPicker, menu, toast, formatDate, debounce, loadCss } from '/lib/ui.js'
-import { icon, hasIcon } from '/lib/icons.js'
+import { h, confirmDialog, emojiPicker, menu, toast, formatDate, debounce, loadCss } from '../../lib/ui.js'
+import { icon, hasIcon } from '../../lib/icons.js'
 import { createBlockEditor } from './blocks.js'
 import { createTableEditor, newTable } from './table.js'
 import { createHistory, historyKey, formatSize } from './util.js'
 
-const CSS_URL = '/modules/notebook/notebook.css'
+const CSS_URL = new URL('./notebook.css', import.meta.url).href
 const SAVE_DELAY = 700
 
 export default {
@@ -770,6 +770,13 @@ function mountNotebook(el, mctx) {
     }
 
     const attAction = async (att, action) => {
+      // Hosted there is no desktop to open the file on, and the server does not
+      // register these routes at all - so open the file's own URL instead. The
+      // content route already sends Content-Disposition and an inert CSP.
+      if (api.hosted) {
+        if (action === 'open') globalThis.open(contentUrl(att.id), '_blank', 'noopener')
+        return
+      }
       try {
         await api.post(`/api/attachments/${enc(att.id)}/${action}`)
       } catch (err) {
@@ -807,7 +814,7 @@ function mountNotebook(el, mctx) {
                 a.source === 'script-output' ? h('span', { class: 'nb-tag' }, 'Output') : null)),
             h('div', { class: 'nb-att-actions' },
               iconBtn('external-link', 'Open', { class: 'nb-icon-btn nb-att-open', onClick: () => attAction(a, 'open') }),
-              iconBtn('folder', 'Show in folder', { class: 'nb-icon-btn nb-att-reveal', onClick: () => attAction(a, 'reveal') }),
+              api.hosted ? null : iconBtn('folder', 'Show in folder', { class: 'nb-icon-btn nb-att-reveal', onClick: () => attAction(a, 'reveal') }),
               isTable ? null : iconBtn(isImage(a) ? 'image' : 'plus', isImage(a) ? 'Insert image into page' : 'Insert file into page', { class: 'nb-icon-btn nb-att-insert', onClick: () => editor.insertAttachment(a) }),
               iconBtn('trash', 'Delete attachment', { class: 'nb-icon-btn nb-att-delete', onClick: () => deleteAttachment(a) })))))
           : h('p', { class: 'nb-att-empty' }, 'No attachments yet. Drop files onto the page or ', h('button', { type: 'button', class: 'nb-link-btn', onClick: () => uploadInput.click() }, 'upload'), '.'))

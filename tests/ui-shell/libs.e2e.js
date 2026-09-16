@@ -89,7 +89,7 @@ test('api.js sends the token, throws ApiError, and api.url lets <img> load an at
     const url2 = api.url('/api/x?a=1')
     const list = await api.get(`/api/attachments?moduleId=${moduleId}`)
     const deleted = await api.del(`/api/attachments/${att.id}`)
-    return { got: got.id, patched: patched.title, err, bad, att, src, loaded, url2, list: list.length, deleted, tokenProp: api.token }
+    return { got: got.id, patched: patched.title, err, bad, att, src, loaded, url2, list: list.length, deleted, tokenProp: api.token, origin: location.origin }
   }, m.id)
 
   expect(result.got).toBe(m.id)
@@ -97,9 +97,12 @@ test('api.js sends the token, throws ApiError, and api.url lets <img> load an at
   expect(result.err).toEqual({ isApiError: true, status: 404, code: 'module_not_found', message: 'Module not found' })
   expect(result.bad).toEqual({ status: 400, code: 'invalid_type' })
   expect(result.att.filename).toBe('dot.png')
-  expect(result.src).toBe(`/api/attachments/${result.att.id}/content?token=${token}`)
+  // api.url() resolves against api.js's own location rather than the site root,
+  // so that it still points at the right place when Truss is served under a path
+  // prefix. That makes it absolute; <img src> and download hrefs take it either way.
+  expect(result.src).toBe(`${result.origin}/api/attachments/${result.att.id}/content?token=${token}`)
   expect(result.loaded).toBe(1)
-  expect(result.url2).toBe(`/api/x?a=1&token=${token}`)
+  expect(result.url2).toBe(`${result.origin}/api/x?a=1&token=${token}`)
   expect(result.list).toBe(1)
   expect(result.deleted).toEqual({ ok: true })
   expect(result.tokenProp).toBe(token)
@@ -140,12 +143,17 @@ test('ui helpers: h, modal resolves action values, promptDialog, toast, loadCss 
     el.click()
     window.__h = el.outerHTML
     window.__prompt = ui.promptDialog({ title: 'Name it', label: 'Name', value: 'old' })
+    // Counted on link.href, the resolved absolute URL, because that is the key
+    // loadCss actually dedupes on. The href ATTRIBUTE is relative in index.html
+    // so that Truss can be served under a path prefix, and an attribute-suffix
+    // selector silently matched nothing.
+    const links = (suffix) => [...document.querySelectorAll('link[rel="stylesheet"]')].filter((l) => l.href.endsWith(suffix)).length
     await ui.loadCss('/styles/tokens.css')
     await ui.loadCss('/styles/tokens.css')
-    window.__links = document.querySelectorAll('link[href$="/styles/tokens.css"]').length
+    window.__links = links('/styles/tokens.css')
     await ui.loadCss('/styles/does-not-exist-yet.css')
     await ui.loadCss('/styles/does-not-exist-yet.css')
-    window.__newLinks = document.querySelectorAll('link[href$="/styles/does-not-exist-yet.css"]').length
+    window.__newLinks = links('/styles/does-not-exist-yet.css')
   })
   expect(await page.evaluate(() => window.__h)).toBe('<button class="x" data-a="1">Hi<span>!</span></button>')
   expect(await page.evaluate(() => window.__clicked)).toBe(true)

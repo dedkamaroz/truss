@@ -24,7 +24,7 @@ if (IS_MAIN) {
   })
 }
 
-export async function startServer({ port = 4717, dataDir, host = '127.0.0.1' } = {}) {
+export async function startServer({ port = 4717, dataDir, host = '127.0.0.1', hosted = process.env.TRUSS_HOSTED === '1' } = {}) {
   if (!dataDir) throw new Error('startServer requires dataDir')
   dataDir = path.resolve(dataDir)
   // Imported lazily so the CLI warning filter above is installed before node:sqlite loads.
@@ -38,6 +38,7 @@ export async function startServer({ port = 4717, dataDir, host = '127.0.0.1' } =
   const ctx = {
     db,
     dataDir,
+    hosted,
     attachments: createAttachments(db, dataDir),
     templates,
     moduleDeleteHooks,
@@ -56,7 +57,14 @@ export async function startServer({ port = 4717, dataDir, host = '127.0.0.1' } =
 
   router.get('/api/health', () => ({ ok: true }))
 
-  const routeFiles = fs.readdirSync(ROUTES_DIR).filter((f) => f.endsWith('.js')).sort()
+  // server/routes/scripts.js pulls in server/runner.js, which spawns cmd.exe,
+  // powershell.exe and taskkill.exe against local paths. On a shared server that
+  // is remote code execution for anyone holding the module grant, so it is not
+  // registered and runner.js is never imported at all.
+  const routeFiles = fs.readdirSync(ROUTES_DIR)
+    .filter((f) => f.endsWith('.js'))
+    .filter((f) => !(hosted && f === 'scripts.js'))
+    .sort()
   for (const file of routeFiles) {
     const mod = await import(pathToFileURL(path.join(ROUTES_DIR, file)).href)
     if (typeof mod.default !== 'function') throw new Error(`server/routes/${file} has no default register(router, ctx) export`)
@@ -69,6 +77,9 @@ export async function startServer({ port = 4717, dataDir, host = '127.0.0.1' } =
   })
 
   async function handle(req, res) {
+    // The hosted proxy MUST send Host: 127.0.0.1:<port>. This check is what stops
+    // a DNS-rebinding page in a browser from reaching a local Truss, and the
+    // sidecar binds 127.0.0.1 only, so loosening it buys nothing.
     const hostHeader = (req.headers.host || '').toLowerCase()
     if (hostHeader !== `127.0.0.1:${actualPort}` && hostHeader !== `localhost:${actualPort}`) {
       return sendJson(res, 403, { error: { code: 'forbidden_host', message: 'Invalid Host header' } })
@@ -148,6 +159,7 @@ export async function startServer({ port = 4717, dataDir, host = '127.0.0.1' } =
     url,
     port: actualPort,
     token,
+    hosted,
     ctx,
     server,
     async close() {
@@ -188,7 +200,7 @@ if (IS_MAIN) {
   try {
     const s = await startServer({ port, dataDir })
     console.log(`Truss running at ${s.url}`)
-    if (process.argv.includes('--open')) openAppWindow(s.url)
+    if (process.argv.includes('--open') && !s.hosted) openAppWindow(s.url)
     const shutdown = () => s.close().finally(() => process.exit(0))
     process.on('SIGINT', shutdown)
     process.on('SIGTERM', shutdown)

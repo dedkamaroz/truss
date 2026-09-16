@@ -5,7 +5,7 @@ import ui, { h, button, toast, menu, modal, confirmDialog, emojiPicker, formatDa
 import { icon, hasIcon } from './lib/icons.js'
 import registry from './lib/registry.js'
 
-const MODULE_FILES = ['database', 'sheet', 'notebook', 'scripts'].map((n) => `/modules/${n}/index.js`)
+const MODULE_FILES = ['database', 'sheet', 'notebook', 'scripts'].map((n) => new URL(`./modules/${n}/index.js`, import.meta.url).href)
 const TYPE_ORDER = ['database', 'sheet', 'notebook']
 const TYPE_INFO = {
   database: { label: 'Database', plural: 'Databases', icon: 'database', blurb: 'Track structured data with tables, boards and calendars.' },
