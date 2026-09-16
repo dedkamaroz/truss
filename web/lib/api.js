@@ -9,7 +9,18 @@ export class ApiError extends Error {
   }
 }
 
-const token = globalThis.document?.querySelector('meta[name="truss-token"]')?.content || ''
+// Truss is served from "/" locally and from "/m/truss/" on the web_server, so
+// nothing may hardcode the root. api.js lives at <base>/lib/api.js, which makes
+// "../" the application root under either mount. Every caller keeps passing
+// root-absolute paths ("/api/databases/x"); they are resolved here, which is
+// why none of the 69 call sites had to change.
+export const BASE = new URL('../', import.meta.url)
+
+const resolve = (p) => new URL(String(p).replace(/^\//, ''), BASE).href
+
+const meta = (name) => globalThis.document?.querySelector(`meta[name="${name}"]`)?.content || ''
+
+const token = meta('truss-token')
 
 async function parse(res) {
   const text = await res.text()
@@ -35,7 +46,7 @@ async function request(method, path, body) {
   }
   let res
   try {
-    res = await fetch(path, init)
+    res = await fetch(resolve(path), init)
   } catch (e) {
     throw new ApiError(0, 'network_error', 'Could not reach the Truss server')
   }
@@ -50,7 +61,7 @@ export const api = {
   patch: (path, body) => request('PATCH', path, body),
   del: (path, body) => request('DELETE', path, body),
   async upload(path, fileOrBlob, filename = fileOrBlob?.name || 'file') {
-    const res = await fetch(path, {
+    const res = await fetch(resolve(path), {
       method: 'POST',
       headers: {
         'X-Truss-Token': token,
@@ -62,7 +73,8 @@ export const api = {
     return parse(res)
   },
   url(path) {
-    return path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token)
+    const u = resolve(path)
+    return u + (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token)
   },
 }
 

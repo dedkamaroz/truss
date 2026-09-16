@@ -1,12 +1,12 @@
 // Notebook content type: page tree + page view (block editor or full-page table), attachments and page actions.
 
-import { h, confirmDialog, emojiPicker, menu, toast, formatDate, debounce, loadCss } from '/lib/ui.js'
-import { icon, hasIcon } from '/lib/icons.js'
+import { h, confirmDialog, emojiPicker, menu, toast, formatDate, debounce, loadCss } from '../../lib/ui.js'
+import { icon, hasIcon } from '../../lib/icons.js'
 import { createBlockEditor } from './blocks.js'
 import { createTableEditor, newTable } from './table.js'
 import { createHistory, historyKey, formatSize } from './util.js'
 
-const CSS_URL = '/modules/notebook/notebook.css'
+const CSS_URL = new URL('./notebook.css', import.meta.url).href
 const SAVE_DELAY = 700
 
 export default {

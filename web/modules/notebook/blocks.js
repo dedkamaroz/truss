@@ -1,9 +1,9 @@
 // Block editor for text pages. Content is an array of { id, type, html, props }.
 // One contenteditable per block; typing only touches that block's model entry (no re-render of others).
 
-import { h, popover, promptDialog, emojiPicker, menu, toast } from '/lib/ui.js'
-import { icon } from '/lib/icons.js'
-import { sanitizeHtml, safeHref } from '/lib/sanitize.js'
+import { h, popover, promptDialog, emojiPicker, menu, toast } from '../../lib/ui.js'
+import { icon } from '../../lib/icons.js'
+import { sanitizeHtml, safeHref } from '../../lib/sanitize.js'
 import { bid, escapeHtml, caretOffset, selectionEndOffset, rangeAt, setCaret, createHistory, historyKey, formatSize } from './util.js'
 import { createTableEditor, newTable, normaliseTable } from './table.js'
 
