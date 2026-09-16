@@ -49,16 +49,20 @@ export default function register(router, ctx) {
     fs.createReadStream(file).on('error', () => res.destroy()).pipe(res)
   })
 
-  router.post('/api/attachments/:id/open', ({ params }) => {
-    load(params.id)
-    return launch('explorer.exe', [attachments.pathOf(params.id)])
-  })
+  // explorer.exe is a desktop affordance. Hosted, there is no desktop to open
+  // the file on and no reason to spawn a process, so the routes do not exist.
+  if (!ctx.hosted) {
+    router.post('/api/attachments/:id/open', ({ params }) => {
+      load(params.id)
+      return launch('explorer.exe', [attachments.pathOf(params.id)])
+    })
 
-  router.post('/api/attachments/:id/reveal', ({ params }) => {
-    load(params.id)
-    // Two separate argv entries; Node quotes the path if it contains spaces: /select, "C:\...\file name.png"
-    return launch('explorer.exe', ['/select,', attachments.pathOf(params.id)])
-  })
+    router.post('/api/attachments/:id/reveal', ({ params }) => {
+      load(params.id)
+      // Two separate argv entries; Node quotes the path if it contains spaces: /select, "C:\...\file name.png"
+      return launch('explorer.exe', ['/select,', attachments.pathOf(params.id)])
+    })
+  }
 
   router.delete('/api/attachments/:id', ({ params }) => {
     load(params.id)

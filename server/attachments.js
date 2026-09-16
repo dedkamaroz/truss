@@ -18,7 +18,10 @@ export function launch(command, args) {
   return { ok: true }
 }
 
-export const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024
+// The local default. Hosted, this shares a volume with the host's auth database:
+// a volume full of attachments locks every user out of the server, not just out
+// of Truss, so the deployment sets a far lower ceiling.
+export const MAX_UPLOAD_BYTES = Number(process.env.TRUSS_MAX_UPLOAD_BYTES) || 1024 * 1024 * 1024
 
 const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i
 
