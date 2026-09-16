@@ -76,3 +76,23 @@ test('an API call resolves against the prefix', async ({ page }) => {
   expect(seen.length).toBeGreaterThan(0)
   for (const u of seen) expect(u).toContain('/m/truss/api/')
 })
+
+test('hosted mode is read from the meta tag the proxy injects', async ({ page }) => {
+  // Mirrors what the web_server's proxy does to the HTML it serves: one replace
+  // on <head>. addInitScript cannot stand in for it - that runs at document
+  // start, when document.head is still null.
+  await page.route(base + '/', async (route) => {
+    const res = await route.fetch()
+    const body = (await res.text()).replace('<head>', '<head><meta name="truss-hosted" content="1">')
+    await route.fulfill({ response: res, body, headers: { ...res.headers(), 'content-length': String(Buffer.byteLength(body)) } })
+  })
+  await page.goto(base + '/')
+  const hosted = await page.evaluate(async () => (await import('./lib/api.js')).hosted)
+  expect(hosted).toBe(true)
+})
+
+test('without the meta tag the client is not in hosted mode', async ({ page }) => {
+  await page.goto(base + '/')
+  const hosted = await page.evaluate(async () => (await import('./lib/api.js')).hosted)
+  expect(hosted).toBe(false)
+})

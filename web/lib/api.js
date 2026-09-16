@@ -22,6 +22,10 @@ const meta = (name) => globalThis.document?.querySelector(`meta[name="${name}"]`
 
 const token = meta('truss-token')
 
+// Set by the host's proxy when Truss is served from the web_server. It gates the
+// affordances that only make sense on the machine holding the files.
+export const hosted = meta('truss-hosted') === '1'
+
 async function parse(res) {
   const text = await res.text()
   let data = text
@@ -55,6 +59,7 @@ async function request(method, path, body) {
 
 export const api = {
   token,
+  hosted,
   get: (path) => request('GET', path),
   post: (path, body) => request('POST', path, body),
   put: (path, body) => request('PUT', path, body),
