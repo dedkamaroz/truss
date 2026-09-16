@@ -96,3 +96,44 @@ test('without the meta tag the client is not in hosted mode', async ({ page }) =
   const hosted = await page.evaluate(async () => (await import('./lib/api.js')).hosted)
   expect(hosted).toBe(false)
 })
+
+test('every mutating request carries the CSRF header the host injected', async ({ page }) => {
+  // The gap this pins: api.js once read the meta tags but never sent the header,
+  // so every write 403'd behind the real host. Neither side's suite caught it -
+  // Truss's tests have no CSRF guard and the host's tests set the header by hand.
+  await page.route(base + '/', async (route) => {
+    const res = await route.fetch()
+    const body = (await res.text()).replace(
+      '<head>',
+      '<head><meta name="truss-hosted" content="1"><meta name="truss-csrf" content="csrf-xyz">',
+    )
+    await route.fulfill({ response: res, body, headers: { ...res.headers(), 'content-length': String(Buffer.byteLength(body)) } })
+  })
+  await page.goto(base + '/')
+
+  const sent = []
+  page.on('request', (r) => {
+    if (r.url().includes('/api/') && r.method() !== 'GET') sent.push(r.headers()['x-csrf-token'])
+  })
+  await page.evaluate(async () => {
+    const { api } = await import('./lib/api.js')
+    await api.post('/api/modules', { type: 'database', title: 'CSRF probe' })
+    await api.upload('/api/attachments?moduleId=x&pageId=y', new Blob(['hi'], { type: 'text/plain' }), 'hi.txt').catch(() => {})
+  })
+  expect(sent.length).toBeGreaterThanOrEqual(2)
+  for (const h of sent) expect(h).toBe('csrf-xyz')
+})
+
+test('locally, with no meta tag, no CSRF header is sent', async ({ page }) => {
+  await page.goto(base + '/')
+  const sent = []
+  page.on('request', (r) => {
+    if (r.url().includes('/api/') && r.method() !== 'GET') sent.push(r.headers()['x-csrf-token'])
+  })
+  await page.evaluate(async () => {
+    const { api } = await import('./lib/api.js')
+    await api.post('/api/modules', { type: 'database', title: 'Local probe' })
+  })
+  expect(sent.length).toBeGreaterThan(0)
+  for (const h of sent) expect(h).toBeUndefined()
+})

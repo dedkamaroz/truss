@@ -26,6 +26,14 @@ const token = meta('truss-token')
 // affordances that only make sense on the machine holding the files.
 export const hosted = meta('truss-hosted') === '1'
 
+// The host's CSRF double-submit token, also injected by the proxy. Absent when
+// Truss runs locally, where the header is simply omitted and nothing checks it.
+// Every mutating request must carry it or the host answers 403 before the
+// request ever reaches this server.
+const csrf = meta('truss-csrf')
+
+const authHeaders = () => (csrf ? { 'X-Truss-Token': token, 'X-CSRF-Token': csrf } : { 'X-Truss-Token': token })
+
 async function parse(res) {
   const text = await res.text()
   let data = text
@@ -42,7 +50,7 @@ async function parse(res) {
 }
 
 async function request(method, path, body) {
-  const headers = { 'X-Truss-Token': token }
+  const headers = authHeaders()
   const init = { method, headers }
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
@@ -69,7 +77,7 @@ export const api = {
     const res = await fetch(resolve(path), {
       method: 'POST',
       headers: {
-        'X-Truss-Token': token,
+        ...authHeaders(),
         'X-Filename': encodeURIComponent(filename),
         'Content-Type': fileOrBlob?.type || 'application/octet-stream',
       },
