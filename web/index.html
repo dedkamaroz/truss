@@ -7,17 +7,19 @@
   <meta name="color-scheme" content="light dark">
   <title>Truss</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="styles/tokens.css">
-  <link rel="stylesheet" href="styles/base.css">
-  <link rel="stylesheet" href="styles/components.css">
-  <link rel="stylesheet" href="styles/shell.css">
-  <link rel="modulepreload" href="lib/api.js">
-  <link rel="modulepreload" href="lib/ui.js">
-  <link rel="modulepreload" href="lib/icons.js">
-  <link rel="modulepreload" href="lib/registry.js">
-  <script type="module" src="app.js"></script>
+  <link rel="stylesheet" href="app/app.css">
+  <script src="app/boot.js" defer></script>
+  <script src="app/icons.js" defer></script>
+  <script src="app/engine.js" defer></script>
+  <script src="app/helpers.js" defer></script>
+  <script src="app/core.js" defer></script>
+  <script src="app/db.js" defer></script>
+  <script src="app/sheet.js" defer></script>
+  <script src="app/nb.js" defer></script>
+  <script src="app/sync.js" defer></script>
+  <script src="app/runtime.js" defer></script>
 </head>
 <body>
-  <div id="app" class="app app-booting" aria-busy="true"></div>
+  <div id="app" class="app-booting" aria-busy="true"></div>
 </body>
 </html>

@@ -1,0 +1,704 @@
+<!-- Truss UI template. {{path}} holes, <sc-for>, <sc-if>, @@MACRO(arg)@@ and @@I:icon@@ are expanded by runtime.js. -->
+<!--@CELL-->
+<div class="{{$.cls}}" style="{{$.style}}" onClick="{{$.click}}">
+<sc-if value="{{$.editing}}" hint-placeholder-val="{{false}}"><input class="cell-input" data-cellinput="1" type="text" value="{{$.draft}}" onChange="{{$.onDraft}}" onKeyDown="{{$.onKey}}" onBlur="{{$.onBlur}}" aria-label="{{$.label}}"></sc-if>
+<sc-if value="{{$.showText}}" hint-placeholder-val="{{true}}"><span class="cell-text">{{$.text}}</span></sc-if>
+<sc-if value="{{$.hasTags}}" hint-placeholder-val="{{false}}"><span class="tags"><sc-for list="{{$.tags}}" as="tg" hint-placeholder-count="1"><span class="{{tg.cls}}">{{tg.text}}</span></sc-for></span></sc-if>
+<sc-if value="{{$.isCheck}}" hint-placeholder-val="{{false}}"><input type="checkbox" class="cb" checked="{{$.checked}}" onChange="{{$.toggle}}" onClick="{{$.stop}}" disabled="{{$.ro}}" aria-label="{{$.label}}"></sc-if>
+<sc-if value="{{$.isLink}}" hint-placeholder-val="{{false}}"><a class="cell-link" href="{{$.href}}" target="_blank" rel="noopener noreferrer" onClick="{{$.stop}}">{{$.text}}</a></sc-if>
+<sc-if value="{{$.isPlaceholder}}" hint-placeholder-val="{{false}}"><span class="cell-ph">{{$.placeholder}}</span></sc-if>
+<sc-if value="{{$.hasBar}}" hint-placeholder-val="{{false}}"><span class="cell-bar"><span style="{{$.barStyle}}"></span></span></sc-if>
+<sc-if value="{{$.isTitle}}" hint-placeholder-val="{{false}}"><button type="button" class="cell-open" onClick="{{$.openRow}}">@@I:open:sm@@<span>Open</span></button></sc-if>
+</div>
+<!--@END-->
+<!--@MINIS-->
+<span class="minis"><sc-for list="{{$}}" as="mp" hint-placeholder-count="2"><span class="{{mp.cls}}" title="{{mp.label}}"><sc-if value="{{mp.hasTags}}" hint-placeholder-val="{{false}}"><sc-for list="{{mp.tags}}" as="mt" hint-placeholder-count="1"><span class="{{mt.cls}}">{{mt.text}}</span></sc-for></sc-if><sc-if value="{{mp.showText}}" hint-placeholder-val="{{true}}"><span class="mini-t">{{mp.text}}</span></sc-if></span></sc-for></span>
+<!--@END-->
+<!--@TYPEICON-->
+<sc-if value="{{$.isDb}}" hint-placeholder-val="{{false}}">@@I:database@@</sc-if><sc-if value="{{$.isSheet}}" hint-placeholder-val="{{false}}">@@I:sheet@@</sc-if><sc-if value="{{$.isNb}}" hint-placeholder-val="{{false}}">@@I:notebook@@</sc-if><sc-if value="{{$.isPage}}" hint-placeholder-val="{{false}}">@@I:page@@</sc-if>
+<!--@END-->
+<!--@TGRID-->
+<div class="tp-wrap"><div class="tp">
+<div class="tp-tr"><div class="tp-rn"></div><sc-for list="{{$.cols}}" as="tc" hint-placeholder-count="3"><div class="tp-th" style="{{tc.style}}"><div class="tp-hin"><input value="{{tc.name}}" onChange="{{tc.onName}}" aria-label="Column name"><button type="button" class="icon-btn" onClick="{{tc.menu}}" aria-label="Column actions">@@I:chevd:sm@@</button></div></div></sc-for><div class="tp-th" style="width: 44px;"><button type="button" class="icon-btn" style="margin: 4px;" onClick="{{$.addCol}}" aria-label="Add a column">@@I:plus:sm@@</button></div></div>
+<sc-for list="{{$.rows}}" as="tr" hint-placeholder-count="3"><div class="tp-tr"><div class="tp-rn"><button type="button" onClick="{{tr.menu}}" aria-label="Row actions">{{tr.num}}</button></div><sc-for list="{{tr.cells}}" as="td" hint-placeholder-count="3"><div class="tp-td" style="{{td.style}}"><textarea rows="1" data-tcell="{{td.key}}" value="{{td.value}}" onChange="{{td.onChange}}" onKeyDown="{{td.onKey}}" aria-label="Cell"></textarea></div></sc-for><div class="tp-td"></div></div></sc-for>
+</div>
+<button type="button" class="tp-addrow" onClick="{{$.addRow}}">@@I:plus:sm@@<span>New row</span></button>
+</div>
+<!--@END-->
+<!--@MEDIAPICK-->
+<div class="media-pick"><sc-if value="{{$.local}}" hint-placeholder-val="{{false}}"><span class="muted">Images and files are stored by the Truss server.</span></sc-if><sc-if value="{{$.remote}}" hint-placeholder-val="{{true}}"><span class="muted">{{$.emptyText}}</span><label class="btn file-pick"><input type="file" accept="{{$.accept}}" onChange="{{$.onPick}}">@@I:upload:sm@@<span>{{$.pickLabel}}</span></label><sc-if value="{{$.busy}}" hint-placeholder-val="{{false}}"><span class="muted">Uploading...</span></sc-if></sc-if></div>
+<!--@END-->
+<!--@EDITOR-->
+<div class="{{$.edCls}}" onDragOver="{{$.fileOver}}" onDragLeave="{{$.fileLeave}}" onDrop="{{$.fileDrop}}">
+<sc-for list="{{$.blocks}}" as="b" hint-placeholder-count="4">
+<div class="{{b.cls}}" data-blk="{{b.id}}" onDragOver="{{b.dragOver}}" onDrop="{{b.drop}}">
+<div class="blk-gutter">
+<button type="button" onClick="{{b.add}}" aria-label="Add a block below">@@I:plus:sm@@</button>
+<button type="button" class="blk-handle" draggable="true" onDragStart="{{b.dragStart}}" onDragEnd="{{b.dragEnd}}" onClick="{{b.handle}}" aria-label="Block actions (drag to move)">@@I:drag:sm dots@@</button>
+</div>
+<div class="blk-body">
+<sc-if value="{{b.isTodo}}" hint-placeholder-val="{{false}}"><span class="blk-check"><input type="checkbox" checked="{{b.checked}}" onChange="{{b.toggleCheck}}" aria-label="Mark done"></span></sc-if>
+<sc-if value="{{b.isUl}}" hint-placeholder-val="{{false}}"><span class="blk-bullet"></span></sc-if>
+<sc-if value="{{b.isOl}}" hint-placeholder-val="{{false}}"><span class="blk-num">{{b.num}}</span></sc-if>
+<sc-if value="{{b.isToggle}}" hint-placeholder-val="{{false}}"><button type="button" class="{{b.tgCls}}" onClick="{{b.toggleOpen}}" aria-label="Expand or collapse">@@I:chevr:sm@@</button></sc-if>
+<sc-if value="{{b.noCalloutIcon}}" hint-placeholder-val="{{false}}"><span class="callout-ic">@@I:info@@</span></sc-if><sc-if value="{{b.hasCalloutIcon}}" hint-placeholder-val="{{false}}"><span class="callout-ic emo">{{b.calloutIcon}}</span></sc-if>
+<sc-if value="{{b.isText}}" hint-placeholder-val="{{true}}">
+<div class="blk-main">
+<sc-if value="{{b.active}}" hint-placeholder-val="{{false}}"><textarea class="blk-in {{b.tcls}}" data-bin="{{b.id}}" rows="{{b.rows}}" value="{{b.text}}" placeholder="{{b.placeholder}}" onChange="{{b.onChange}}" onKeyDown="{{b.onKey}}" onFocus="{{b.onFocus}}" onBlur="{{b.onBlur}}" aria-label="Block text"></textarea></sc-if>
+<sc-if value="{{b.notActive}}" hint-placeholder-val="{{true}}"><div class="blk-show {{b.tcls}}" onMouseDown="{{b.activate}}"><sc-for list="{{b.segs}}" as="sg" hint-placeholder-count="1"><sc-if value="{{sg.isText}}" hint-placeholder-val="{{true}}"><span class="{{sg.cls}}">{{sg.text}}</span></sc-if><sc-if value="{{sg.isLink}}" hint-placeholder-val="{{false}}"><button type="button" class="{{sg.cls}}" onMouseDown="{{sg.go}}">{{sg.text}}</button></sc-if><sc-if value="{{sg.isUrl}}" hint-placeholder-val="{{false}}"><a class="xlink" href="{{sg.href}}" target="_blank" rel="noopener noreferrer" onMouseDown="{{sg.stop}}">{{sg.text}}</a></sc-if></sc-for><sc-if value="{{b.showPh}}" hint-placeholder-val="{{false}}"><span class="blk-ph">{{b.placeholder}}</span></sc-if></div></sc-if>
+<sc-if value="{{b.showBody}}" hint-placeholder-val="{{false}}"><div class="tg-body"><textarea rows="1" value="{{b.body}}" placeholder="Hidden content" onChange="{{b.onBody}}" aria-label="Toggle content"></textarea></div></sc-if>
+</div>
+</sc-if>
+<sc-if value="{{b.isDivider}}" hint-placeholder-val="{{false}}"><hr></sc-if>
+<sc-if value="{{b.isTableBlk}}" hint-placeholder-val="{{false}}"><div class="tblk">@@TGRID(b.tg)@@</div></sc-if>
+<sc-if value="{{b.isImage}}" hint-placeholder-val="{{false}}">
+<sc-if value="{{b.media.has}}" hint-placeholder-val="{{false}}"><figure class="media-img"><img src="{{b.media.url}}" alt="{{b.media.name}}" onDoubleClick="{{b.media.open}}"><figcaption>{{b.media.name}}</figcaption></figure></sc-if>
+<sc-if value="{{b.media.none}}" hint-placeholder-val="{{true}}">@@MEDIAPICK(b.media)@@</sc-if>
+</sc-if>
+<sc-if value="{{b.isFile}}" hint-placeholder-val="{{false}}">
+<sc-if value="{{b.media.has}}" hint-placeholder-val="{{false}}"><button type="button" class="media-file" onClick="{{b.media.open}}">@@I:file@@<span class="mf-name">{{b.media.name}}</span><span class="muted">{{b.media.size}}</span>@@I:open:sm@@</button></sc-if>
+<sc-if value="{{b.media.none}}" hint-placeholder-val="{{true}}">@@MEDIAPICK(b.media)@@</sc-if>
+</sc-if>
+<sc-if value="{{b.isPageLink}}" hint-placeholder-val="{{false}}"><button type="button" class="pagelink" onClick="{{b.pl.go}}">@@I:page@@<span class="pl-t">{{b.pl.title}}</span><span class="pl-s">{{b.pl.sub}}</span></button></sc-if>
+<sc-if value="{{b.isToc}}" hint-placeholder-val="{{false}}"><div class="toc"><sc-for list="{{b.toc}}" as="th" hint-placeholder-count="2"><button type="button" class="{{th.cls}}" onClick="{{th.go}}">{{th.text}}</button></sc-for><sc-if value="{{b.tocEmpty}}" hint-placeholder-val="{{false}}"><span class="muted">Add headings to this page to build a table of contents.</span></sc-if></div></sc-if>
+<sc-if value="{{b.isDbEmbed}}" hint-placeholder-val="{{false}}">
+<div class="embed">
+<sc-if value="{{b.dbe.ok}}" hint-placeholder-val="{{true}}">
+<div class="embed-head"><span class="{{b.dbe.tile}}">@@I:database@@</span><span class="eh-t">{{b.dbe.title}}</span><span class="muted" style="font-size: 12.5px;">{{b.dbe.viewName}} - {{b.dbe.count}}</span><button type="button" class="tb-btn" onClick="{{b.dbe.add}}">@@I:plus:sm@@<span>New</span></button><button type="button" class="tb-btn" onClick="{{b.dbe.go}}">@@I:open:sm@@<span>Open</span></button></div>
+<div class="embed-body"><div class="emb-table">
+<div class="emb-tr"><sc-for list="{{b.dbe.cols}}" as="ec" hint-placeholder-count="3"><div class="emb-th">{{ec.name}}</div></sc-for></div>
+<sc-for list="{{b.dbe.rows}}" as="er" hint-placeholder-count="3"><div class="emb-tr" onClick="{{er.open}}"><sc-for list="{{er.cells}}" as="ecl" hint-placeholder-count="3"><div class="emb-td">@@CELL(ecl)@@</div></sc-for></div></sc-for>
+</div></div>
+<sc-if value="{{b.dbe.more}}" hint-placeholder-val="{{false}}"><div class="embed-foot">{{b.dbe.moreText}}</div></sc-if>
+</sc-if>
+<sc-if value="{{b.dbe.missing}}" hint-placeholder-val="{{false}}"><div class="embed-missing">This database is no longer available. Use the block menu to choose another one.</div></sc-if>
+</div>
+</sc-if>
+<sc-if value="{{b.isSheetEmbed}}" hint-placeholder-val="{{false}}">
+<div class="embed">
+<sc-if value="{{b.she.ok}}" hint-placeholder-val="{{true}}">
+<div class="embed-head"><span class="{{b.she.tile}}">@@I:sheet@@</span><span class="eh-t">{{b.she.title}}</span><button type="button" class="tb-btn" onClick="{{b.editRange}}">@@I:settings:sm@@<span>Range</span></button><button type="button" class="tb-btn" onClick="{{b.she.go}}">@@I:open:sm@@<span>Open</span></button></div>
+<div class="embed-body"><div class="emb-table"><sc-for list="{{b.she.rows}}" as="sr" hint-placeholder-count="3"><div class="emb-tr"><sc-for list="{{sr.cells}}" as="scl" hint-placeholder-count="3"><div class="{{scl.cls}}">{{scl.text}}</div></sc-for></div></sc-for></div></div>
+<div class="embed-foot">Live values - edits in the workbook show here.</div>
+</sc-if>
+<sc-if value="{{b.she.missing}}" hint-placeholder-val="{{false}}"><div class="embed-missing row gap8"><span>This workbook or range is not available.</span><button type="button" class="xlink" onClick="{{b.editRange}}">Choose a range</button></div></sc-if>
+</div>
+</sc-if>
+</div>
+<sc-if value="{{b.slashOpen}}" hint-placeholder-val="{{false}}">
+<div class="slash" role="listbox" aria-label="{{b.slashTitle}}">
+<div class="label">{{b.slashTitle}}</div>
+<sc-for list="{{b.slashItems}}" as="si" hint-placeholder-count="4"><button type="button" class="{{si.cls}}" onMouseDown="{{si.pick}}" onMouseEnter="{{si.hover}}"><span class="slash-glyph">{{si.glyph}}</span><span class="grow"><span class="slash-t" style="display: block;">{{si.label}}</span><span class="slash-h" style="display: block;">{{si.hint}}</span></span></button></sc-for>
+<sc-if value="{{b.slashEmpty}}" hint-placeholder-val="{{false}}"><div class="slash-none">Nothing matches. Keep typing or press Esc.</div></sc-if>
+</div>
+</sc-if>
+</div>
+</sc-for>
+<button type="button" class="add-end" onClick="{{$.addEnd}}" aria-label="Add a block at the end"></button>
+</div>
+<!--@END-->
+<!--@ROWDOC-->
+<div class="{{$.docCls}}">
+<div class="row gap8 muted" style="font-size: 12.5px; margin-bottom: 12px;"><span class="{{$.tile}}">@@I:database@@</span><span>{{$.dbTitle}}</span></div>
+<textarea class="rowdoc-title" data-rowtitle="1" rows="1" value="{{$.title}}" placeholder="Untitled" onChange="{{$.onTitle}}" onKeyDown="{{$.onTitleKey}}" aria-label="Row title"></textarea>
+<div class="rprops">
+<sc-for list="{{$.props}}" as="rp" hint-placeholder-count="5">
+<div class="rp"><button type="button" class="rp-name" onClick="{{rp.open}}">@@PICON(rp)@@<span>{{rp.name}}</span></button><div class="rp-val">@@CELL(rp.cell)@@</div></div>
+</sc-for>
+<button type="button" class="rp-add" onClick="{{$.addProp}}">@@I:plus:sm@@<span>Add a property</span></button>
+</div>
+<div class="rowdoc-meta">{{$.meta}}</div>
+@@EDITOR($.ed)@@
+<sc-if value="{{$.backlinks.has}}" hint-placeholder-val="{{false}}">
+<div class="backlinks"><div class="label" style="margin-bottom: 6px;">{{$.backlinks.count}}</div>
+<sc-for list="{{$.backlinks.items}}" as="bl" hint-placeholder-count="1"><button type="button" class="bl" onClick="{{bl.go}}">@@I:link:sm@@<span class="bl-t">{{bl.title}}</span><span class="bl-s">{{bl.sub}}</span></button></sc-for>
+</div>
+</sc-if>
+</div>
+<!--@END-->
+<!--@MAIN-->
+<div class="{{rootCls}}" onKeyDown="{{onRootKey}}" onPointerMove="{{onRootMove}}" onPointerUp="{{onRootUp}}" tabIndex="-1" style="width: 100%; height: 100vh; min-width: 1024px;">
+
+<aside class="sb" aria-label="Workspace">
+<div class="sb-top">
+<div class="brand"><span class="brand-mark">@@I:truss@@</span><span>Truss</span></div>
+<button type="button" class="icon-btn" onClick="{{sb.collapse}}" aria-label="Hide sidebar (Ctrl+\)">@@I:sidebar@@</button>
+</div>
+<div class="sb-actions">
+<button type="button" class="sb-link" onClick="{{sb.search}}">@@I:search@@<span>Search</span><span class="kbd">Ctrl K</span></button>
+<button type="button" class="{{sb.homeCls}}" onClick="{{sb.goHome}}">@@I:home@@<span>Home</span></button>
+<button type="button" class="sb-link" onClick="{{sb.newMenu}}">@@I:plus@@<span>New</span></button>
+</div>
+<div class="sb-scroll">
+<sc-if value="{{sb.hasFavs}}" hint-placeholder-val="{{false}}">
+<div class="sb-group">
+<div class="sb-group-head"><span class="gh-label">@@I:star:sm@@<span>Favourites</span></span></div>
+<sc-for list="{{sb.favs}}" as="f" hint-placeholder-count="2">
+<div class="sb-row"><button type="button" class="{{f.cls}}" onClick="{{f.go}}"><span class="sb-spacer"></span><span class="{{f.tile}}">@@TYPEICON(f)@@</span><span class="sb-title">{{f.title}}</span></button></div>
+</sc-for>
+</div>
+</sc-if>
+<sc-for list="{{sb.groups}}" as="g" hint-placeholder-count="3">
+<div class="sb-group">
+<div class="{{g.headCls}}"><button type="button" class="gh-label" onClick="{{g.toggle}}"><span class="gh-chev">@@I:chevd:sm@@</span><span>{{g.label}}</span></button><button type="button" class="icon-btn gh-add" onClick="{{g.add}}" aria-label="Add">@@I:plus:sm@@</button></div>
+<sc-for list="{{g.items}}" as="it" hint-placeholder-count="2">
+<div class="sb-row" onContextMenu="{{it.menu}}">
+<sc-if value="{{it.hasTree}}" hint-placeholder-val="{{false}}"><button type="button" class="{{it.chevCls}}" onClick="{{it.toggle}}" aria-label="Show pages">@@I:chevr:sm@@</button></sc-if>
+<button type="button" class="{{it.cls}}" onClick="{{it.go}}"><sc-if value="{{it.isDb}}" hint-placeholder-val="{{false}}"><span class="sb-spacer"></span></sc-if><sc-if value="{{it.isSheet}}" hint-placeholder-val="{{false}}"><span class="sb-spacer"></span></sc-if><span class="{{it.tile}}">@@TYPEICON(it)@@</span><span class="sb-title">{{it.title}}</span></button>
+<sc-if value="{{it.hasTree}}" hint-placeholder-val="{{false}}"><button type="button" class="icon-btn sb-plus" onClick="{{it.addPage}}" aria-label="Add a page">@@I:plus:sm@@</button></sc-if>
+<button type="button" class="icon-btn sb-more" onClick="{{it.menu}}" aria-label="More actions">@@I:more:sm dots@@</button>
+</div>
+<sc-for list="{{it.pages}}" as="pg" hint-placeholder-count="0">
+<div class="sb-row" onContextMenu="{{pg.menu}}">
+<div class="{{pg.cls}}" style="{{pg.style}}">
+<sc-if value="{{pg.hasKids}}" hint-placeholder-val="{{false}}"><button type="button" class="{{pg.chevCls}}" onClick="{{pg.toggle}}" aria-label="Show sub-pages">@@I:chevr:sm@@</button></sc-if>
+<sc-if value="{{pg.noKids}}" hint-placeholder-val="{{true}}"><span class="sb-spacer" style="display: inline-flex; align-items: center; justify-content: center; color: var(--ink3);"><sc-if value="{{pg.isTable}}" hint-placeholder-val="{{false}}">@@I:table:sm@@</sc-if><sc-if value="{{pg.isText}}" hint-placeholder-val="{{true}}">@@I:page:sm@@</sc-if><sc-if value="{{pg.hasIcon}}" hint-placeholder-val="{{false}}"><span class="emo sm">{{pg.icon}}</span></sc-if></span></sc-if>
+<button type="button" class="sb-title" style="height: 28px; text-align: left;" onClick="{{pg.go}}">{{pg.title}}</button>
+</div>
+<button type="button" class="icon-btn sb-plus" onClick="{{pg.add}}" aria-label="Add a sub-page">@@I:plus:sm@@</button>
+<button type="button" class="icon-btn sb-more" onClick="{{pg.menu}}" aria-label="Page actions">@@I:more:sm dots@@</button>
+</div>
+</sc-for>
+<sc-if value="{{it.noPages}}" hint-placeholder-val="{{false}}"><div class="sb-empty">No pages yet</div></sc-if>
+</sc-for>
+<sc-if value="{{g.empty}}" hint-placeholder-val="{{false}}"><div class="sb-empty">Nothing here yet</div></sc-if>
+</div>
+</sc-for>
+</div>
+<sc-if value="{{sb.storageOff}}" hint-placeholder-val="{{false}}"><div class="sb-warn">Storage is off here, so changes last until reload. Export from Settings.</div></sc-if>
+<div class="sb-foot">
+<button type="button" class="sb-link" onClick="{{sb.templates}}">@@I:template@@<span>Templates</span></button>
+<button type="button" class="{{sb.archiveCls}}" onClick="{{sb.goArchive}}">@@I:archive@@<span>Archive</span><span class="sb-count">{{sb.archivedCount}}</span></button>
+<button type="button" class="sb-link" onClick="{{sb.toggleTheme}}"><sc-if value="{{sb.isLight}}" hint-placeholder-val="{{true}}">@@I:moon@@</sc-if><sc-if value="{{sb.isDark}}" hint-placeholder-val="{{false}}">@@I:sun@@</sc-if><span>{{sb.themeLabel}}</span></button>
+<button type="button" class="sb-link" onClick="{{sb.settings}}">@@I:settings@@<span>Settings</span></button>
+</div>
+</aside>
+
+<div class="{{mainCls}}">
+<header class="top">
+<sc-if value="{{top.sbOff}}" hint-placeholder-val="{{false}}"><button type="button" class="icon-btn" onClick="{{top.openSidebar}}" aria-label="Show sidebar">@@I:sidebar@@</button></sc-if>
+<nav class="crumbs" aria-label="Breadcrumb">
+<sc-for list="{{top.crumbs}}" as="cr" hint-placeholder-count="2">
+<button type="button" class="{{cr.cls}}" onClick="{{cr.go}}"><sc-if value="{{cr.hasTile}}" hint-placeholder-val="{{false}}"><span class="{{cr.tile}}">@@TYPEICON(cr)@@</span></sc-if><span>{{cr.label}}</span></button>
+<sc-if value="{{cr.notLast}}" hint-placeholder-val="{{false}}"><span class="crumb-sep">/</span></sc-if>
+</sc-for>
+</nav>
+<span class="top-edited">{{top.edited}}</span>
+<sc-if value="{{top.hasSync}}" hint-placeholder-val="{{false}}"><button type="button" class="{{top.syncCls}}" onClick="{{top.syncClick}}" aria-live="polite">{{top.syncLabel}}</button></sc-if>
+<sc-if value="{{top.showFav}}" hint-placeholder-val="{{false}}"><button type="button" class="{{top.favCls}}" onClick="{{top.toggleFav}}" aria-label="Favourite">@@I:star@@</button></sc-if>
+<sc-if value="{{top.hasMore}}" hint-placeholder-val="{{false}}"><button type="button" class="icon-btn" onClick="{{top.more}}" aria-label="More actions">@@I:more:dots@@</button></sc-if>
+</header>
+
+<div class="scroll" data-scroll="main">
+
+<sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}"><div class="load-pane" role="status"><span class="spinner"></span><span>Loading your workspace...</span></div></sc-if>
+<sc-if value="{{hasLoadError}}" hint-placeholder-val="{{false}}"><div class="load-pane err" role="alert"><strong>Truss could not load the workspace</strong><span class="muted">{{loadError}}</span><button type="button" class="btn btn-primary" onClick="{{retryLoad}}">Try again</button></div></sc-if>
+
+<sc-if value="{{isHome}}" hint-placeholder-val="{{true}}">
+<div class="page-wrap" style="max-width: 1000px;">
+<h1 class="hello">{{home.greeting}}</h1>
+<p class="hello-sub">{{home.dateLine}}</p>
+<div class="create-row">
+<button type="button" class="create-card" onClick="{{home.newDb}}"><span class="tile mid tile-teal">@@I:database@@</span><span><span class="cc-t" style="display: block;">New database</span><span class="cc-s" style="display: block;">Tables, boards, calendars</span></span></button>
+<button type="button" class="create-card" onClick="{{home.newSheet}}"><span class="tile mid tile-amber">@@I:sheet@@</span><span><span class="cc-t" style="display: block;">New workbook</span><span class="cc-s" style="display: block;">Sheets with formulas</span></span></button>
+<button type="button" class="create-card" onClick="{{home.newNb}}"><span class="tile mid tile-clay">@@I:notebook@@</span><span><span class="cc-t" style="display: block;">New notebook</span><span class="cc-s" style="display: block;">Nested pages and blocks</span></span></button>
+</div>
+<sc-if value="{{home.hasRecent}}" hint-placeholder-val="{{false}}">
+<div class="sec-title">@@I:clock:sm@@<span>Jump back in</span></div>
+<div class="card-grid">
+<sc-for list="{{home.recent}}" as="rc" hint-placeholder-count="3"><button type="button" class="rcard" onClick="{{rc.go}}"><span class="{{rc.tile}}">@@TYPEICON(rc)@@</span><span class="rc-t">{{rc.title}}</span><span class="rc-s">{{rc.sub}} - {{rc.when}}</span></button></sc-for>
+</div>
+</sc-if>
+<div class="sec-title">@@I:calendar:sm@@<span>Due in the next week</span></div>
+<sc-if value="{{home.hasDue}}" hint-placeholder-val="{{true}}">
+<div class="due-list"><sc-for list="{{home.due}}" as="du" hint-placeholder-count="3"><button type="button" class="{{du.cls}}" onClick="{{du.go}}"><span class="d-when">{{du.when}}</span><span class="d-t">{{du.title}}</span><span class="d-db">{{du.db}}</span></button></sc-for></div>
+</sc-if>
+<sc-if value="{{home.noDue}}" hint-placeholder-val="{{false}}"><div class="empty-note">Nothing due. Rows with a date in any database show up here until they are marked done.</div></sc-if>
+<sc-if value="{{home.hasEdited}}" hint-placeholder-val="{{true}}">
+<div class="sec-title">@@I:edit:sm@@<span>Recently edited</span></div>
+<div class="card-grid">
+<sc-for list="{{home.edited}}" as="ed" hint-placeholder-count="3"><button type="button" class="rcard" onClick="{{ed.go}}"><span class="{{ed.tile}}">@@TYPEICON(ed)@@</span><span class="rc-t">{{ed.title}}</span><span class="rc-s">{{ed.sub}} - {{ed.when}}</span></button></sc-for>
+</div>
+</sc-if>
+<sc-if value="{{home.isEmpty}}" hint-placeholder-val="{{false}}"><div class="empty-note row gap12" style="margin-top: 24px;"><span class="grow">Your workspace is empty. Start from a template below, or bring back the demo content.</span><button type="button" class="btn" onClick="{{home.reset}}">Restore demo</button></div></sc-if>
+<div class="sec-title">@@I:template:sm@@<span>Start from a template</span></div>
+<div class="tpl-grid">
+<sc-for list="{{home.templates}}" as="tp" hint-placeholder-count="4"><button type="button" class="tpl" onClick="{{tp.use}}"><span class="tile mid tile-slate">@@TYPEICON(tp)@@</span><span><span class="tp-k" style="display: block;">{{tp.type}}</span><span class="tp-n" style="display: block;">{{tp.name}}</span><span class="tp-d" style="display: block;">{{tp.desc}}</span></span></button></sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isArchive}}" hint-placeholder-val="{{false}}">
+<div class="page-wrap">
+<div class="mhead"><span class="tile big tile-slate">@@I:archive@@</span><h1 class="mtitle" style="margin: 0;">Archive</h1><sc-if value="{{archive.hasItems}}" hint-placeholder-val="{{false}}"><button type="button" class="btn" onClick="{{archive.emptyAll}}">@@I:trash:sm@@<span>Empty archive</span></button></sc-if></div>
+<p class="muted" style="margin: 8px 0 0 58px;">Archived databases, workbooks, notebooks and pages. Restore them or delete them for good.</p>
+<sc-if value="{{archive.hasItems}}" hint-placeholder-val="{{false}}">
+<div class="arch-list"><sc-for list="{{archive.items}}" as="ai" hint-placeholder-count="2"><div class="arch"><span class="{{ai.tile}}">@@TYPEICON(ai)@@</span><span class="grow"><span class="a-t" style="display: block;">{{ai.title}}</span><span class="a-s" style="display: block;">{{ai.sub}}</span></span><button type="button" class="btn" onClick="{{ai.restore}}">@@I:restore:sm@@<span>Restore</span></button><button type="button" class="btn" onClick="{{ai.del}}" aria-label="Delete permanently">@@I:trash:sm@@</button></div></sc-for></div>
+</sc-if>
+<sc-if value="{{archive.isEmpty}}" hint-placeholder-val="{{true}}"><div class="empty-note" style="margin-top: 18px;">The archive is empty.</div></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isDb}}" hint-placeholder-val="{{false}}">
+<div class="db-page">
+<div class="mhead"><button type="button" class="{{db.tile}} tile big" onClick="{{db.pickColor}}" aria-label="Change colour or icon"><sc-if value="{{db.hasIcon}}" hint-placeholder-val="{{false}}"><span class="emo">{{db.icon}}</span></sc-if><sc-if value="{{db.noIcon}}" hint-placeholder-val="{{true}}">@@I:database@@</sc-if></button><input class="mtitle" value="{{db.title}}" onChange="{{db.onTitle}}" onBlur="{{db.onTitleBlur}}" placeholder="Untitled database" aria-label="Database title"></div>
+<input class="mdesc" value="{{db.desc}}" onChange="{{db.onDesc}}" placeholder="Add a description" aria-label="Description">
+<div class="vbar">
+<sc-for list="{{db.views}}" as="vw" hint-placeholder-count="2"><button type="button" class="{{vw.cls}}" onClick="{{vw.go}}">@@PICON(vw)@@<span>{{vw.name}}</span></button></sc-for>
+<button type="button" class="tb-btn" onClick="{{db.addView}}" aria-label="Add a view">@@I:plus:sm@@</button>
+<span class="vbar-sp"></span>
+<button type="button" class="{{db.filterCls}}" onClick="{{db.openFilter}}">@@I:filter:sm@@<span>{{db.filterLabel}}</span></button>
+<button type="button" class="{{db.sortCls}}" onClick="{{db.openSort}}">@@I:sort:sm@@<span>{{db.sortLabel}}</span></button>
+<sc-if value="{{db.showGroupBtn}}" hint-placeholder-val="{{true}}"><button type="button" class="{{db.groupCls}}" onClick="{{db.openGroup}}">@@I:group:sm@@<span>{{db.groupLabel}}</span></button></sc-if>
+<button type="button" class="tb-btn" onClick="{{db.openProps}}">@@I:eye:sm@@<span>Properties</span></button>
+<label class="db-search">@@I:search:sm@@<input value="{{db.search}}" onChange="{{db.onSearch}}" placeholder="Search" aria-label="Search this database"></label>
+<button type="button" class="tb-btn" onClick="{{db.more}}" aria-label="More">@@I:more:sm dots@@</button>
+<button type="button" class="new-btn" onClick="{{db.newRow}}">@@I:plus:sm@@<span>New</span></button>
+</div>
+<sc-if value="{{db.hasChips}}" hint-placeholder-val="{{false}}"><div class="chips"><sc-for list="{{db.chips}}" as="ch" hint-placeholder-count="1"><span class="chip"><button type="button" onClick="{{ch.open}}" style="width: auto; padding: 0 2px;">{{ch.label}}</button><button type="button" onClick="{{ch.remove}}" aria-label="Remove filter">@@I:close:sm@@</button></span></sc-for></div></sc-if>
+<sc-if value="{{db.hasSel}}" hint-placeholder-val="{{false}}"><div class="selbar"><span>{{db.selLabel}}</span><button type="button" class="tb-btn" onClick="{{db.deleteSel}}">@@I:trash:sm@@<span>Delete</span></button><button type="button" class="tb-btn" onClick="{{db.clearSel}}">Clear selection</button></div></sc-if>
+
+<sc-if value="{{db.viewIs.table}}" hint-placeholder-val="{{true}}">
+<div class="dbt-wrap">
+<div class="dbt" style="{{db.tableStyle}}">
+<div class="dbt-head">
+<div class="dbt-gutter"><input type="checkbox" class="row-sel" checked="{{db.allSel}}" onChange="{{db.toggleAll}}" aria-label="Select all rows"></div>
+<sc-for list="{{db.cols}}" as="co" hint-placeholder-count="4"><div class="dbt-th" style="{{co.style}}" data-th="{{co.id}}"><button type="button" class="row gap6 grow" style="height: 100%; min-width: 0;" onClick="{{co.open}}">@@PICON(co)@@<span class="th-name">{{co.name}}</span><sc-if value="{{co.hasSort}}" hint-placeholder-val="{{false}}"><span class="th-sort">{{co.sortMark}}</span></sc-if></button><span class="th-resize" onPointerDown="{{co.resize}}"></span></div></sc-for>
+<button type="button" class="dbt-add" onClick="{{db.addProp}}" aria-label="Add a property">@@I:plus:sm@@</button>
+</div>
+<sc-for list="{{db.groups}}" as="gr" hint-placeholder-count="1">
+<sc-if value="{{gr.showHead}}" hint-placeholder-val="{{false}}"><div class="dbt-group"><button type="button" class="{{gr.chevCls}}" onClick="{{gr.toggle}}" aria-label="Collapse group">@@I:chevr:sm@@</button><span class="{{gr.tagCls}}">{{gr.label}}</span><span class="muted" style="font-weight: 400;">{{gr.count}}</span></div></sc-if>
+<sc-if value="{{gr.open}}" hint-placeholder-val="{{true}}">
+<sc-for list="{{gr.rows}}" as="r" hint-placeholder-count="6">
+<div class="{{r.cls}}">
+<div class="dbt-gutter"><button type="button" class="row-handle" onClick="{{r.menu}}" aria-label="Row actions">@@I:drag:sm dots@@</button><input type="checkbox" class="row-sel" checked="{{r.selected}}" onChange="{{r.toggleSel}}" aria-label="Select row"></div>
+<sc-for list="{{r.cells}}" as="c" hint-placeholder-count="4">@@CELL(c)@@</sc-for>
+</div>
+</sc-for>
+<button type="button" class="dbt-new" onClick="{{gr.add}}">@@I:plus:sm@@<span>New</span></button>
+<div class="dbt-calcs"><div class="dbt-gutter"></div><sc-for list="{{gr.calcs}}" as="k" hint-placeholder-count="4"><button type="button" class="{{k.cls}}" style="{{k.style}}" onClick="{{k.open}}"><span>{{k.label}}</span><strong>{{k.value}}</strong></button></sc-for></div>
+</sc-if>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{db.viewIs.board}}" hint-placeholder-val="{{false}}">
+<div class="board">
+<sc-for list="{{db.board}}" as="bc" hint-placeholder-count="3">
+<div class="{{bc.cls}}" onDragOver="{{bc.over}}" onDrop="{{bc.drop}}">
+<div class="bcol-head"><span class="{{bc.tagCls}}">{{bc.label}}</span><span class="muted" style="font-size: 12.5px;">{{bc.count}}</span><button type="button" class="tb-btn" onClick="{{bc.add}}" aria-label="Add a card">@@I:plus:sm@@</button></div>
+<sc-for list="{{bc.cards}}" as="kd" hint-placeholder-count="2"><button type="button" class="{{kd.cls}}" draggable="true" onDragStart="{{kd.drag}}" onDragEnd="{{kd.end}}" onClick="{{kd.open}}"><span class="bcard-title">{{kd.title}}</span>@@MINIS(kd.props)@@</button></sc-for>
+<button type="button" class="bcol-new" onClick="{{bc.add}}">@@I:plus:sm@@<span>New</span></button>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{db.viewIs.list}}" hint-placeholder-val="{{false}}">
+<div class="dlist">
+<sc-for list="{{db.list.rows}}" as="lr" hint-placeholder-count="4"><button type="button" class="dlist-row" onClick="{{lr.open}}" onContextMenu="{{lr.menu}}"><span class="muted">@@I:page@@</span><span class="dlist-title">{{lr.title}}</span>@@MINIS(lr.props)@@</button></sc-for>
+<button type="button" class="dbt-new" style="padding-left: 10px;" onClick="{{db.newRow}}">@@I:plus:sm@@<span>New</span></button>
+</div>
+</sc-if>
+
+<sc-if value="{{db.viewIs.gallery}}" hint-placeholder-val="{{false}}">
+<div class="gallery">
+<sc-for list="{{db.gallery.cards}}" as="gc" hint-placeholder-count="3"><button type="button" class="gcard" onClick="{{gc.open}}"><span class="{{gc.coverCls}}">{{gc.excerpt}}</span><span class="gbody"><span class="gtitle">{{gc.title}}</span>@@MINIS(gc.props)@@</span></button></sc-for>
+<button type="button" class="gcard gnew" onClick="{{db.newRow}}">@@I:plus:sm@@<span>New</span></button>
+</div>
+</sc-if>
+
+<sc-if value="{{db.viewIs.calendar}}" hint-placeholder-val="{{false}}">
+<div class="cal-head"><strong>{{db.cal.label}}</strong><span class="muted" style="font-size: 12.5px;">by {{db.cal.dateName}}</span><sc-if value="{{db.cal.hasUndated}}" hint-placeholder-val="{{false}}"><span class="muted" style="font-size: 12.5px;">- {{db.cal.undatedText}}</span></sc-if><button type="button" class="icon-btn" onClick="{{db.cal.prev}}" aria-label="Previous month">@@I:left@@</button><button type="button" class="btn" style="height: 28px;" onClick="{{db.cal.today}}">Today</button><button type="button" class="icon-btn" onClick="{{db.cal.next}}" aria-label="Next month">@@I:chevr@@</button></div>
+<div class="cal-dow"><sc-for list="{{db.cal.dow}}" as="dw" hint-placeholder-count="7"><span>{{dw}}</span></sc-for></div>
+<div class="cal-grid">
+<sc-for list="{{db.cal.days}}" as="dy" hint-placeholder-count="14">
+<div class="{{dy.cls}}" onDragOver="{{dy.over}}" onDrop="{{dy.drop}}">
+<div class="cal-dn"><span class="cal-num">{{dy.num}}</span><button type="button" class="icon-btn cal-add" onClick="{{dy.add}}" aria-label="Add on this day">@@I:plus:sm@@</button></div>
+<sc-for list="{{dy.items}}" as="ci" hint-placeholder-count="0"><button type="button" class="{{ci.cls}}" draggable="true" onDragStart="{{ci.drag}}" onClick="{{ci.open}}">{{ci.title}}</button></sc-for>
+<sc-if value="{{dy.more}}" hint-placeholder-val="{{false}}"><span class="cal-more">{{dy.moreText}}</span></sc-if>
+</div>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{db.isEmpty}}" hint-placeholder-val="{{false}}"><div class="db-empty">No rows yet. Click New to add one, or import a CSV from the menu.</div></sc-if>
+<sc-if value="{{db.noMatch}}" hint-placeholder-val="{{false}}"><div class="db-empty row gap8" style="justify-content: center;"><span>No rows match the current filters or search.</span><button type="button" class="btn" onClick="{{db.clearFilters}}">Clear filters</button></div></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isRowPage}}" hint-placeholder-val="{{false}}">
+<div class="row gap8" style="padding: 14px 24px 0;"><button type="button" class="btn" onClick="{{rowpage.backToDb}}">@@I:left:sm@@<span>Back to {{rowpage.dbTitle}}</span></button><button type="button" class="btn" onClick="{{rowpage.toPeek}}">@@I:sidebar:sm@@<span>Open in side peek</span></button><span class="grow"></span><button type="button" class="icon-btn" onClick="{{rowpage.more}}" aria-label="Row actions">@@I:more:dots@@</button></div>
+@@ROWDOC(rowpage)@@
+</sc-if>
+
+<sc-if value="{{isSheet}}" hint-placeholder-val="{{false}}">
+<div class="wb-head"><button type="button" class="{{sh.tile}} tile mid" onClick="{{sh.pickColor}}" aria-label="Change colour or icon"><sc-if value="{{sh.hasIcon}}" hint-placeholder-val="{{false}}"><span class="emo">{{sh.icon}}</span></sc-if><sc-if value="{{sh.noIcon}}" hint-placeholder-val="{{true}}">@@I:sheet@@</sc-if></button><input class="wb-title" value="{{sh.titleDraft}}" onChange="{{sh.onTitle}}" onBlur="{{sh.onTitleBlur}}" onKeyDown="{{sh.onTitleKey}}" aria-label="Workbook title"><span class="muted" style="font-size: 12.5px;">{{sh.sheetCount}}</span><button type="button" class="btn" onClick="{{sh.fnRef}}"><span style="font-style: italic; font-family: Georgia, serif;">fx</span><span>Functions</span></button></div>
+<div class="wb-tools" role="toolbar" aria-label="Formatting">
+<button type="button" class="tb-icon" onClick="{{sh.undo}}" disabled="{{sh.undoOff}}" aria-label="Undo (Ctrl+Z)">@@I:undo@@</button>
+<button type="button" class="tb-icon" onClick="{{sh.redo}}" disabled="{{sh.redoOff}}" aria-label="Redo (Ctrl+Y)">@@I:redo@@</button>
+<span class="tb-sep"></span>
+<select class="select" value="{{sh.fmt}}" onChange="{{sh.onFmt}}" aria-label="Number format"><sc-for list="{{sh.fmts}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select>
+<button type="button" class="tb-icon" onClick="{{sh.dpDown}}" aria-label="Fewer decimal places">.0</button>
+<button type="button" class="tb-icon" onClick="{{sh.dpUp}}" aria-label="More decimal places">.00</button>
+<span class="tb-sep"></span>
+<button type="button" class="{{sh.boldCls}}" onClick="{{sh.bold}}" aria-label="Bold (Ctrl+B)">B</button>
+<button type="button" class="{{sh.italicCls}} i" onClick="{{sh.italic}}" aria-label="Italic (Ctrl+I)">I</button>
+<button type="button" class="{{sh.alLCls}}" onClick="{{sh.alL}}" aria-label="Align left">@@I:alignl@@</button>
+<button type="button" class="{{sh.alCCls}}" onClick="{{sh.alC}}" aria-label="Align centre">@@I:alignc@@</button>
+<button type="button" class="{{sh.alRCls}}" onClick="{{sh.alR}}" aria-label="Align right">@@I:alignr@@</button>
+<button type="button" class="tb-icon" onClick="{{sh.fontColor}}" aria-label="Text colour">@@I:color@@</button>
+<button type="button" class="tb-icon" onClick="{{sh.fill}}" aria-label="Fill colour">@@I:fill@@</button>
+<button type="button" class="{{sh.freezeCls}}" onClick="{{sh.freeze}}" aria-label="Freeze rows and columns">@@I:freeze@@</button>
+<span class="tb-sep"></span>
+<button type="button" class="tb-icon" onClick="{{sh.insertMenu}}" aria-label="Insert or delete rows and columns">@@I:insert@@</button>
+<button type="button" class="tb-icon" onClick="{{sh.sortAsc}}" aria-label="Sort A to Z by the active column">@@I:sortaz@@</button>
+<button type="button" class="tb-icon" onClick="{{sh.sortDesc}}" aria-label="Sort Z to A by the active column">@@I:sortza@@</button>
+</div>
+<div class="wb-bar">
+<span class="namebox">{{sh.nameBox}}</span>
+<span class="fx-lbl">fx</span>
+<div class="bar-wrap">
+<input class="bar-input" data-bar="1" value="{{sh.barValue}}" onChange="{{sh.onBar}}" onKeyDown="{{sh.onBarKey}}" onFocus="{{sh.onBarFocus}}" onBlur="{{sh.onEdBlur}}" spellCheck="false" aria-label="Formula bar">
+<sc-if value="{{sh.hasSugs}}" hint-placeholder-val="{{false}}"><div class="sugs"><sc-for list="{{sh.sugs}}" as="sg" hint-placeholder-count="3"><button type="button" class="{{sg.cls}}" onMouseDown="{{sg.down}}" onClick="{{sg.pick}}"><span class="sg-n">{{sg.sig}}</span><span class="sg-d">{{sg.desc}}</span></button></sc-for><div class="pop-hint" style="padding: 4px 9px 2px;">Tab or click to insert, arrows to choose</div></div></sc-if>
+<sc-if value="{{sh.hasHint}}" hint-placeholder-val="{{false}}"><div class="fn-hint"><code>{{sh.hint}}</code><span class="muted"> - {{sh.hintDesc}}</span></div></sc-if>
+<sc-if value="{{sh.hasErrMsg}}" hint-placeholder-val="{{false}}"><div class="fn-hint fn-err">{{sh.errMsg}}</div></sc-if>
+</div>
+</div>
+<div class="wb-scroll" data-scroll="grid">
+<div class="wb-grid" data-grid="1" tabIndex="0" style="{{sh.gridStyle}}" onMouseDown="{{sh.onDown}}" onMouseOver="{{sh.onOver}}" onMouseUp="{{sh.onUp}}" onDoubleClick="{{sh.onDbl}}" onContextMenu="{{sh.onCtx}}" onKeyDown="{{sh.onKey}}" onCopy="{{sh.onCopy}}" onCut="{{sh.onCut}}" onPaste="{{sh.onPaste}}" aria-label="Worksheet grid">
+<div class="wb-hrow"><div class="wb-corner"></div><sc-for list="{{sh.cols}}" as="hc" hint-placeholder-count="8"><div class="{{hc.cls}}" style="{{hc.style}}" data-colh="{{hc.i}}">{{hc.label}}<span class="th-resize" onPointerDown="{{hc.resize}}"></span></div></sc-for></div>
+<sc-for list="{{sh.rows}}" as="wr" hint-placeholder-count="12"><div class="{{wr.rowCls}}" style="{{wr.rowStyle}}"><div class="{{wr.cls}}" data-rowh="{{wr.i}}">{{wr.label}}</div><sc-for list="{{wr.cells}}" as="wc" hint-placeholder-count="8"><div class="{{wc.cls}}" style="{{wc.style}}" data-cell="{{wc.key}}" title="{{wc.title}}">{{wc.text}}</div></sc-for></div></sc-for>
+<sc-if value="{{sh.edIsCell}}" hint-placeholder-val="{{false}}"><input class="wb-editor" data-celled="1" style="{{sh.edStyle}}" value="{{sh.edValue}}" onChange="{{sh.onEd}}" onKeyDown="{{sh.onEdKey}}" onBlur="{{sh.onEdBlur}}" spellCheck="false" aria-label="Cell editor"></sc-if>
+</div>
+<div class="wb-more"><button type="button" class="btn" onClick="{{sh.addRows}}">@@I:plus:sm@@<span>20 more rows</span></button><button type="button" class="btn" onClick="{{sh.addCols}}">@@I:plus:sm@@<span>4 more columns</span></button></div>
+</div>
+<div class="wb-foot">
+<sc-for list="{{sh.tabs}}" as="tb" hint-placeholder-count="2"><button type="button" class="{{tb.cls}}" onClick="{{tb.go}}" onDoubleClick="{{tb.dbl}}" onContextMenu="{{tb.menu}}">{{tb.name}}</button></sc-for>
+<button type="button" class="icon-btn" onClick="{{sh.addSheet}}" aria-label="Add a sheet">@@I:plus:sm@@</button>
+<span class="wb-stats">{{sh.stats}}</span>
+</div>
+</sc-if>
+
+<sc-if value="{{isNb}}" hint-placeholder-val="{{false}}">
+<sc-if value="{{nb.isOverview}}" hint-placeholder-val="{{false}}">
+<div class="page-wrap">
+<div class="mhead"><button type="button" class="{{nb.tile}} tile big" onClick="{{nb.pickColor}}" aria-label="Change colour or icon"><sc-if value="{{nb.hasIcon}}" hint-placeholder-val="{{false}}"><span class="emo">{{nb.icon}}</span></sc-if><sc-if value="{{nb.noIcon}}" hint-placeholder-val="{{true}}">@@I:notebook@@</sc-if></button><input class="mtitle" value="{{nb.titleDraft}}" onChange="{{nb.onTitle}}" onBlur="{{nb.onTitleBlur}}" aria-label="Notebook title"></div>
+<p class="muted" style="margin: 4px 0 0 58px;">{{nb.styleLabel}}</p>
+<div class="ov-grid">
+<sc-for list="{{nb.pages}}" as="op" hint-placeholder-count="2"><button type="button" class="ov-card" onClick="{{op.go}}"><span class="ov-t"><sc-if value="{{op.isTable}}" hint-placeholder-val="{{false}}">@@I:table@@</sc-if><sc-if value="{{op.isText}}" hint-placeholder-val="{{true}}">@@I:page@@</sc-if><span>{{op.title}}</span></span><span class="ov-x">{{op.excerpt}}</span><span class="ov-m">{{op.meta}}</span></button></sc-for>
+<button type="button" class="ov-card ov-new" onClick="{{nb.addPage}}">@@I:plus@@<span>New page</span></button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{nb.isPage}}" hint-placeholder-val="{{true}}">
+<div class="nb-layout">
+<div class="nb-main">
+<div class="page-icon-row"><sc-if value="{{nb.page.hasIcon}}" hint-placeholder-val="{{false}}"><button type="button" class="page-icon emo" onClick="{{nb.page.iconMenu}}" aria-label="Change icon">{{nb.page.icon}}</button></sc-if><sc-if value="{{nb.page.noIcon}}" hint-placeholder-val="{{true}}"><button type="button" class="add-icon" onClick="{{nb.page.iconMenu}}">@@I:plus:sm@@<span>Add icon</span></button></sc-if></div>
+<textarea class="page-title" data-pagetitle="1" rows="1" value="{{nb.page.title}}" placeholder="Untitled" onChange="{{nb.page.onTitle}}" onBlur="{{nb.page.onTitleBlur}}" onKeyDown="{{nb.page.onTitleKey}}" aria-label="Page title"></textarea>
+<div class="page-meta"><span>{{nb.page.meta}}</span></div>
+<sc-if value="{{nb.page.isText}}" hint-placeholder-val="{{true}}">@@EDITOR(nb.page.ed)@@</sc-if>
+<sc-if value="{{nb.page.isTable}}" hint-placeholder-val="{{false}}">
+<div class="tp-bar"><span class="muted" style="font-size: 12.5px;">{{nb.page.tbl.count}}</span><span class="grow"></span><button type="button" class="btn" onClick="{{nb.page.tbl.exportCsv}}">@@I:download:sm@@<span>CSV</span></button><button type="button" class="btn" onClick="{{nb.page.tbl.toSheet}}">@@I:sheet:sm@@<span>Open as workbook</span></button><button type="button" class="btn" onClick="{{nb.page.tbl.toDb}}">@@I:database:sm@@<span>Convert to database</span></button></div>
+@@TGRID(nb.page.tbl)@@
+</sc-if>
+<sc-if value="{{nb.page.att.remote}}" hint-placeholder-val="{{false}}">
+<div class="attach"><div class="row gap8"><span class="label">Attachments</span><span class="grow"></span><label class="tb-btn file-pick"><input type="file" multiple onChange="{{nb.page.att.onPick}}">@@I:upload:sm@@<span>Attach files</span></label></div>
+<sc-if value="{{nb.page.att.has}}" hint-placeholder-val="{{false}}"><sc-for list="{{nb.page.att.list}}" as="af" hint-placeholder-count="1"><div class="att-row"><button type="button" class="att-open" onClick="{{af.open}}">@@I:file:sm@@<span class="att-name">{{af.name}}</span><span class="muted">{{af.size}}</span></button><button type="button" class="icon-btn" onClick="{{af.remove}}" aria-label="Delete attachment">@@I:trash:sm@@</button></div></sc-for></sc-if>
+</div>
+</sc-if>
+<sc-if value="{{nb.page.hasKids}}" hint-placeholder-val="{{false}}">
+<div class="kids"><div class="label" style="margin-bottom: 4px;">Sub-pages</div><sc-for list="{{nb.page.kids}}" as="kp" hint-placeholder-count="1"><button type="button" class="kid" onClick="{{kp.go}}"><sc-if value="{{kp.isTable}}" hint-placeholder-val="{{false}}">@@I:table:sm@@</sc-if><sc-if value="{{kp.isText}}" hint-placeholder-val="{{true}}">@@I:page:sm@@</sc-if><span>{{kp.title}}</span></button></sc-for><button type="button" class="kid muted" onClick="{{nb.page.addSub}}">@@I:plus:sm@@<span style="text-decoration: none;">Add a sub-page</span></button></div>
+</sc-if>
+<sc-if value="{{nb.page.backlinks.has}}" hint-placeholder-val="{{false}}">
+<div class="backlinks"><div class="label" style="margin-bottom: 6px;">{{nb.page.backlinks.count}}</div><sc-for list="{{nb.page.backlinks.items}}" as="bk" hint-placeholder-count="1"><button type="button" class="bl" onClick="{{bk.go}}">@@I:link:sm@@<span class="bl-t">{{bk.title}}</span><span class="bl-s">{{bk.sub}}</span></button></sc-for></div>
+</sc-if>
+</div>
+<sc-if value="{{nb.page.hasOutline}}" hint-placeholder-val="{{false}}"><nav class="outline" aria-label="On this page"><div class="label">On this page</div><sc-for list="{{nb.page.outline}}" as="ol" hint-placeholder-count="3"><button type="button" class="{{ol.cls}}" onClick="{{ol.go}}">{{ol.text}}</button></sc-for></nav></sc-if>
+</div>
+</sc-if>
+</sc-if>
+
+</div>
+</div>
+
+<sc-if value="{{hasPeek}}" hint-placeholder-val="{{false}}">
+<section class="peek" aria-label="Row details">
+<div class="peek-top">
+<button type="button" class="icon-btn" onClick="{{peek.close}}" aria-label="Close (Esc)">@@I:close@@</button>
+<button type="button" class="icon-btn" onClick="{{peek.openFull}}" aria-label="Open as full page">@@I:open@@</button>
+<span class="tb-sep"></span>
+<button type="button" class="icon-btn" onClick="{{peek.prev}}" disabled="{{peek.noPrev}}" aria-label="Previous row">@@I:up@@</button>
+<button type="button" class="icon-btn" onClick="{{peek.next}}" disabled="{{peek.noNext}}" aria-label="Next row">@@I:chevd@@</button>
+<span class="muted" style="font-size: 12.5px;">{{peek.position}}</span>
+<span class="grow"></span>
+<button type="button" class="icon-btn" onClick="{{peek.more}}" aria-label="Row actions">@@I:more:dots@@</button>
+</div>
+<div class="peek-scroll">@@ROWDOC(peek)@@</div>
+</section>
+</sc-if>
+
+<sc-if value="{{menu.open}}" hint-placeholder-val="{{false}}">
+<div class="overlay" onMouseDown="{{menu.close}}" onContextMenu="{{menu.close}}"></div>
+<div class="menu" role="menu" style="{{menu.style}}">
+<sc-for list="{{menu.items}}" as="mi" hint-placeholder-count="3">
+<sc-if value="{{mi.isDivider}}" hint-placeholder-val="{{false}}"><div class="menu-div" role="separator"></div></sc-if>
+<sc-if value="{{mi.isItem}}" hint-placeholder-val="{{true}}"><button type="button" role="menuitem" class="{{mi.cls}}" onClick="{{mi.run}}" aria-disabled="{{mi.disabled}}"><sc-if value="{{mi.hasSwatch}}" hint-placeholder-val="{{false}}"><span class="{{mi.swatch}}"></span></sc-if><span class="mi-l">{{mi.label}}</span><sc-if value="{{mi.hasHint}}" hint-placeholder-val="{{false}}"><span class="mi-h">{{mi.hint}}</span></sc-if><sc-if value="{{mi.checked}}" hint-placeholder-val="{{false}}"><span class="mi-c">@@I:check:sm@@</span></sc-if></button></sc-if>
+</sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{pop.open}}" hint-placeholder-val="{{false}}">
+<div class="overlay" onMouseDown="{{pop.close}}"></div>
+<div class="pop" style="{{pop.style}}">
+
+<sc-if value="{{pop.is_opt}}" hint-placeholder-val="{{false}}">
+<div class="pop-h"><span class="grow">{{pop.d.title}}</span></div>
+<sc-if value="{{pop.d.hasSelected}}" hint-placeholder-val="{{false}}"><div class="pop-sel"><sc-for list="{{pop.d.selected}}" as="ps" hint-placeholder-count="1"><span class="{{ps.cls}}">{{ps.text}}<button type="button" onClick="{{ps.remove}}" aria-label="Remove">@@I:close:sm@@</button></span></sc-for></div></sc-if>
+<input class="input" data-popq="1" value="{{pop.d.q}}" onChange="{{pop.d.onQ}}" onKeyDown="{{pop.d.onKey}}" placeholder="Search or create an option" aria-label="Search options">
+<div class="pop-hint">{{pop.d.hint}}</div>
+<div class="opt-list"><sc-for list="{{pop.d.opts}}" as="po" hint-placeholder-count="3"><div class="{{po.rowCls}}"><button type="button" class="opt-pick" onClick="{{po.pick}}"><span class="opt-check"><sc-if value="{{po.on}}" hint-placeholder-val="{{false}}">@@I:check:sm@@</sc-if></span><span class="{{po.cls}}"><span class="opt-name">{{po.text}}</span></span></button><button type="button" class="icon-btn" onClick="{{po.edit}}" aria-label="Edit option">@@I:more:sm dots@@</button></div></sc-for></div>
+<sc-if value="{{pop.d.canCreate}}" hint-placeholder-val="{{false}}"><button type="button" class="opt-create" onClick="{{pop.d.create}}">@@I:plus:sm@@<span>{{pop.d.createLabel}}</span></button></sc-if>
+</sc-if>
+
+<sc-if value="{{pop.is_date}}" hint-placeholder-val="{{false}}">
+<div class="pop-h"><span class="grow">{{pop.d.title}}</span></div>
+<div class="dp-inputs"><input class="input" type="date" value="{{pop.d.value}}" onChange="{{pop.d.onValue}}" aria-label="Start date"><sc-if value="{{pop.d.ranged}}" hint-placeholder-val="{{false}}"><input class="input" type="date" value="{{pop.d.endValue}}" onChange="{{pop.d.onEnd}}" aria-label="End date"></sc-if></div>
+<div class="pop-hint">{{pop.d.display}}</div>
+<label class="chk"><input type="checkbox" checked="{{pop.d.ranged}}" onChange="{{pop.d.onRanged}}"><span>End date</span></label>
+<div class="dp-head"><strong>{{pop.d.monthLabel}}</strong><button type="button" class="icon-btn" onClick="{{pop.d.prevM}}" aria-label="Previous month">@@I:left:sm@@</button><button type="button" class="icon-btn" onClick="{{pop.d.nextM}}" aria-label="Next month">@@I:chevr:sm@@</button></div>
+<div class="dp-grid"><sc-for list="{{pop.d.dow}}" as="dd" hint-placeholder-count="7"><span class="dp-dow">{{dd}}</span></sc-for><sc-for list="{{pop.d.days}}" as="dp" hint-placeholder-count="14"><button type="button" class="{{dp.cls}}" onClick="{{dp.pick}}">{{dp.num}}</button></sc-for></div>
+<div class="dp-quick"><button type="button" onClick="{{pop.d.today}}">Today</button><button type="button" onClick="{{pop.d.tomorrow}}">Tomorrow</button><button type="button" onClick="{{pop.d.nextWeek}}">In a week</button><button type="button" onClick="{{pop.d.clear}}">Clear</button></div>
+</sc-if>
+
+<sc-if value="{{pop.is_files}}" hint-placeholder-val="{{false}}">
+<div class="pop-h"><span class="grow">{{pop.d.title}}</span></div>
+<sc-if value="{{pop.d.local}}" hint-placeholder-val="{{false}}"><p class="pop-hint">Files are stored by the Truss server. Open Truss through the server to attach them.</p></sc-if>
+<sc-if value="{{pop.d.hasFiles}}" hint-placeholder-val="{{false}}"><div class="opt-list"><sc-for list="{{pop.d.files}}" as="fl" hint-placeholder-count="2"><div class="opt-row"><button type="button" class="opt-pick" onClick="{{fl.open}}">@@I:file:sm@@<span class="opt-name">{{fl.name}}</span><span class="muted">{{fl.size}}</span></button><button type="button" class="icon-btn" onClick="{{fl.remove}}" aria-label="Remove file">@@I:close:sm@@</button></div></sc-for></div></sc-if>
+<sc-if value="{{pop.d.remote}}" hint-placeholder-val="{{true}}"><label class="btn file-pick"><input type="file" multiple onChange="{{pop.d.onPick}}"><span>Upload files</span></label><sc-if value="{{pop.d.busy}}" hint-placeholder-val="{{false}}"><span class="pop-hint">Uploading...</span></sc-if></sc-if>
+</sc-if>
+
+<sc-if value="{{pop.is_rel}}" hint-placeholder-val="{{false}}">
+<sc-if value="{{pop.d.noTarget}}" hint-placeholder-val="{{false}}"><p style="margin: 0;">This relation does not point at a database yet.</p><button type="button" class="btn btn-primary" onClick="{{pop.d.setup}}">Choose a database</button></sc-if>
+<sc-if value="{{pop.d.hasTarget}}" hint-placeholder-val="{{true}}">
+<div class="pop-h"><span class="grow">{{pop.d.title}}</span><span style="text-transform: none; font-weight: 500;">{{pop.d.count}}</span></div>
+<input class="input" data-popq="1" value="{{pop.d.q}}" onChange="{{pop.d.onQ}}" onKeyDown="{{pop.d.onKey}}" placeholder="Search rows" aria-label="Search rows">
+<div class="opt-list"><sc-for list="{{pop.d.items}}" as="pr" hint-placeholder-count="3"><div class="{{pr.rowCls}}"><button type="button" class="opt-pick" onClick="{{pr.pick}}"><span class="opt-check"><sc-if value="{{pr.on}}" hint-placeholder-val="{{false}}">@@I:check:sm@@</sc-if></span>@@I:page:sm@@<span class="opt-name">{{pr.text}}</span></button></div></sc-for></div>
+<sc-if value="{{pop.d.canCreate}}" hint-placeholder-val="{{false}}"><button type="button" class="opt-create" onClick="{{pop.d.create}}">@@I:plus:sm@@<span>{{pop.d.createLabel}}</span></button></sc-if>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{pop.is_prop}}" hint-placeholder-val="{{false}}">
+<div class="field"><label class="label" for="pp-name">Property</label><input id="pp-name" class="input" value="{{pop.d.name}}" onChange="{{pop.d.onName}}" onBlur="{{pop.d.onNameBlur}}"></div>
+<sc-if value="{{pop.d.notTitle}}" hint-placeholder-val="{{true}}"><div class="field"><label class="label" for="pp-type">Type</label><select id="pp-type" class="select" value="{{pop.d.type}}" onChange="{{pop.d.onType}}"><sc-for list="{{pop.d.types}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div></sc-if>
+<sc-if value="{{pop.d.isOpts}}" hint-placeholder-val="{{false}}">
+<div class="field"><span class="label">Options</span>
+<sc-for list="{{pop.d.options}}" as="oe" hint-placeholder-count="2"><div class="opt-edit"><button type="button" class="{{oe.cls}} opt-dot" onClick="{{oe.color}}" aria-label="Colour and actions"></button><input class="input" value="{{oe.name}}" onChange="{{oe.onName}}" aria-label="Option name"><button type="button" class="icon-btn" onClick="{{oe.up}}" aria-label="Move up">@@I:up:sm@@</button></div></sc-for>
+<button type="button" class="opt-create" onClick="{{pop.d.addOption}}">@@I:plus:sm@@<span>Add an option</span></button></div>
+</sc-if>
+<sc-if value="{{pop.d.isNumber}}" hint-placeholder-val="{{false}}"><div class="field"><label class="label" for="pp-nf">Number format</label><select id="pp-nf" class="select" value="{{pop.d.numFmt}}" onChange="{{pop.d.onNumFmt}}"><sc-for list="{{pop.d.numFormats}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div><div class="field"><label class="label" for="pp-dp">Decimal places</label><select id="pp-dp" class="select" value="{{pop.d.decimals}}" onChange="{{pop.d.onDecimals}}"><sc-for list="{{pop.d.decOpts}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div></sc-if>
+<sc-if value="{{pop.d.isRelation}}" hint-placeholder-val="{{false}}">
+<div class="field"><label class="label" for="pp-rt">Related database</label><select id="pp-rt" class="select" value="{{pop.d.target}}" onChange="{{pop.d.onTarget}}"><sc-for list="{{pop.d.dbs}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<sc-if value="{{pop.d.canTwoWay}}" hint-placeholder-val="{{false}}"><label class="chk"><input type="checkbox" checked="{{pop.d.twoWay}}" onChange="{{pop.d.onTwoWay}}"><span>{{pop.d.twoWayLabel}}</span></label></sc-if>
+</sc-if>
+<sc-if value="{{pop.d.isRollup}}" hint-placeholder-val="{{false}}">
+<div class="field"><label class="label" for="pp-rr">Relation</label><select id="pp-rr" class="select" value="{{pop.d.relId}}" onChange="{{pop.d.onRel}}"><sc-for list="{{pop.d.rels}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<div class="field"><label class="label" for="pp-rp">Property</label><select id="pp-rp" class="select" value="{{pop.d.tpropId}}" onChange="{{pop.d.onTprop}}"><sc-for list="{{pop.d.tprops}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<div class="field"><label class="label" for="pp-rf">Calculate</label><select id="pp-rf" class="select" value="{{pop.d.fn}}" onChange="{{pop.d.onFn}}"><sc-for list="{{pop.d.fns}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+</sc-if>
+<sc-if value="{{pop.d.isFormula}}" hint-placeholder-val="{{false}}">
+<div class="field"><label class="label" for="pp-fx">Formula</label><textarea id="pp-fx" class="input mono" data-fxexpr="1" rows="3" value="{{pop.d.expr}}" onChange="{{pop.d.onExpr}}" spellCheck="false" placeholder='IF(prop("Due") = "", "", DAYS(prop("Due"), TODAY()))'></textarea><div class="{{pop.d.exprCls}}">{{pop.d.exprStatus}}</div></div>
+<div class="fx-chips"><sc-for list="{{pop.d.propChips}}" as="fc" hint-placeholder-count="3"><button type="button" class="fx-chip" onClick="{{fc.add}}">{{fc.name}}</button></sc-for></div>
+<div class="field"><label class="label" for="pp-ff">Show as</label><select id="pp-ff" class="select" value="{{pop.d.ffmt}}" onChange="{{pop.d.onFfmt}}"><sc-for list="{{pop.d.ffmts}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<div class="pop-hint">Uses the workbook formula engine plus prop("Name"). Every spreadsheet function works here.</div>
+</sc-if>
+<sc-if value="{{pop.d.isLookup}}" hint-placeholder-val="{{false}}">
+<div class="pop-hint">Like VLOOKUP: finds the first row in another database whose column matches this row's value, and returns one of its columns.</div>
+<div class="field"><label class="label" for="pp-ls">Value from this row</label><select id="pp-ls" class="select" value="{{pop.d.srcId}}" onChange="{{pop.d.onSrc}}"><sc-for list="{{pop.d.srcs}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<div class="field"><label class="label" for="pp-lt">Look it up in</label><select id="pp-lt" class="select" value="{{pop.d.ltarget}}" onChange="{{pop.d.onLtarget}}"><sc-for list="{{pop.d.ldbs}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<div class="field"><label class="label" for="pp-lm">Match against</label><select id="pp-lm" class="select" value="{{pop.d.matchId}}" onChange="{{pop.d.onMatch}}"><sc-for list="{{pop.d.matches}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<div class="field"><label class="label" for="pp-lr">Return</label><select id="pp-lr" class="select" value="{{pop.d.retId}}" onChange="{{pop.d.onRet}}"><sc-for list="{{pop.d.rets}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+</sc-if>
+<div class="pop-actions">
+<button type="button" class="menu-item" onClick="{{pop.d.sortAsc}}">@@I:sortaz:sm@@<span class="mi-l">Sort ascending</span></button>
+<button type="button" class="menu-item" onClick="{{pop.d.sortDesc}}">@@I:sortza:sm@@<span class="mi-l">Sort descending</span></button>
+<button type="button" class="menu-item" onClick="{{pop.d.filterBy}}">@@I:filter:sm@@<span class="mi-l">Filter by this</span></button>
+<sc-if value="{{pop.d.canGroup}}" hint-placeholder-val="{{false}}"><button type="button" class="menu-item" onClick="{{pop.d.groupThis}}">@@I:group:sm@@<span class="mi-l">Group by this</span></button></sc-if>
+<sc-if value="{{pop.d.notTitle}}" hint-placeholder-val="{{true}}"><button type="button" class="menu-item" onClick="{{pop.d.hide}}">@@I:eye:sm@@<span class="mi-l">Hide in this view</span></button></sc-if>
+<button type="button" class="menu-item" onClick="{{pop.d.insertLeft}}">@@I:left:sm@@<span class="mi-l">Insert left</span></button>
+<button type="button" class="menu-item" onClick="{{pop.d.insertRight}}">@@I:chevr:sm@@<span class="mi-l">Insert right</span></button>
+<sc-if value="{{pop.d.notTitle}}" hint-placeholder-val="{{true}}">
+<button type="button" class="menu-item" onClick="{{pop.d.moveLeft}}">@@I:left:sm@@<span class="mi-l">Move left</span></button>
+<button type="button" class="menu-item" onClick="{{pop.d.moveRight}}">@@I:chevr:sm@@<span class="mi-l">Move right</span></button>
+<button type="button" class="menu-item" onClick="{{pop.d.duplicate}}">@@I:copy:sm@@<span class="mi-l">Duplicate property</span></button>
+<button type="button" class="menu-item danger" onClick="{{pop.d.del}}">@@I:trash:sm@@<span class="mi-l">Delete property</span></button>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{pop.is_filter}}" hint-placeholder-val="{{false}}">
+<div class="pop-h"><span class="grow">Filters</span></div>
+<sc-if value="{{pop.d.showMode}}" hint-placeholder-val="{{false}}"><select class="select" value="{{pop.d.mode}}" onChange="{{pop.d.onMode}}" aria-label="Combine filters"><sc-for list="{{pop.d.modes}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></sc-if>
+<sc-for list="{{pop.d.rows}}" as="fr" hint-placeholder-count="1">
+<div class="f-row">
+<select class="select" value="{{fr.propId}}" onChange="{{fr.onProp}}" aria-label="Property"><sc-for list="{{fr.props}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select>
+<select class="select" value="{{fr.op}}" onChange="{{fr.onOp}}" aria-label="Condition"><sc-for list="{{fr.ops}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select>
+<sc-if value="{{fr.isText}}" hint-placeholder-val="{{true}}"><input class="input" value="{{fr.value}}" onChange="{{fr.onValue}}" placeholder="Value" aria-label="Value"></sc-if>
+<sc-if value="{{fr.isOpt}}" hint-placeholder-val="{{false}}"><select class="select" style="flex: 1; width: auto;" value="{{fr.value}}" onChange="{{fr.onValue}}" aria-label="Option"><sc-for list="{{fr.opts}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></sc-if>
+<sc-if value="{{fr.isDate}}" hint-placeholder-val="{{false}}"><input class="input" type="date" value="{{fr.value}}" onChange="{{fr.onValue}}" aria-label="Date"></sc-if>
+<span class="grow" style="flex: 0 0 0;"></span>
+<button type="button" class="icon-btn" onClick="{{fr.remove}}" aria-label="Remove filter">@@I:close:sm@@</button>
+</div>
+</sc-for>
+<div class="row gap8"><button type="button" class="opt-create" style="width: auto;" onClick="{{pop.d.add}}">@@I:plus:sm@@<span>Add a filter</span></button><span class="grow"></span><button type="button" class="tb-btn" onClick="{{pop.d.clear}}">Clear all</button></div>
+</sc-if>
+
+<sc-if value="{{pop.is_sort}}" hint-placeholder-val="{{false}}">
+<div class="pop-h"><span class="grow">Sort</span></div>
+<sc-for list="{{pop.d.rows}}" as="sr" hint-placeholder-count="1">
+<div class="f-row">
+<select class="select" style="flex: 1; width: auto;" value="{{sr.propId}}" onChange="{{sr.onProp}}" aria-label="Property"><sc-for list="{{sr.props}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select>
+<select class="select" value="{{sr.dir}}" onChange="{{sr.onDir}}" aria-label="Direction"><sc-for list="{{sr.dirs}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select>
+<button type="button" class="icon-btn" onClick="{{sr.remove}}" aria-label="Remove sort">@@I:close:sm@@</button>
+</div>
+</sc-for>
+<div class="row gap8"><button type="button" class="opt-create" style="width: auto;" onClick="{{pop.d.add}}">@@I:plus:sm@@<span>Add a sort</span></button><span class="grow"></span><button type="button" class="tb-btn" onClick="{{pop.d.clear}}">Clear</button></div>
+</sc-if>
+
+<sc-if value="{{pop.is_group}}" hint-placeholder-val="{{false}}">
+<div class="pop-h"><span class="grow">Group</span></div>
+<div class="field"><label class="label" for="pg-by">Group by</label><select id="pg-by" class="select" value="{{pop.d.groupBy}}" onChange="{{pop.d.onGroup}}"><sc-for list="{{pop.d.props}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<label class="chk"><input type="checkbox" checked="{{pop.d.hideEmpty}}" onChange="{{pop.d.onHideEmpty}}"><span>Hide empty groups</span></label>
+</sc-if>
+
+<sc-if value="{{pop.is_props}}" hint-placeholder-val="{{false}}">
+<div class="pop-h"><span class="grow">Properties in this view</span></div>
+<div class="opt-list" style="max-height: 360px;"><sc-for list="{{pop.d.items}}" as="pv" hint-placeholder-count="4"><div class="pv-row">@@PICON(pv)@@<span class="pv-n">{{pv.name}}</span><sc-if value="{{pv.canUp}}" hint-placeholder-val="{{false}}"><button type="button" class="icon-btn" onClick="{{pv.up}}" aria-label="Move up">@@I:up:sm@@</button></sc-if><sc-if value="{{pv.locked}}" hint-placeholder-val="{{false}}"><span class="muted" style="font-size: 12px;">Always shown</span></sc-if><sc-if value="{{pv.shown}}" hint-placeholder-val="{{true}}"><button type="button" class="toggle on" onClick="{{pv.toggle}}" aria-label="Hide"></button></sc-if><sc-if value="{{pv.hiddenNow}}" hint-placeholder-val="{{false}}"><button type="button" class="toggle" onClick="{{pv.toggle}}" aria-label="Show"></button></sc-if></div></sc-for></div>
+<div class="row gap8"><button type="button" class="tb-btn" onClick="{{pop.d.showAll}}">Show all</button><button type="button" class="tb-btn" onClick="{{pop.d.hideAll}}">Hide all</button><span class="grow"></span><button type="button" class="tb-btn" onClick="{{pop.d.addProp}}">@@I:plus:sm@@<span>New property</span></button></div>
+</sc-if>
+
+<sc-if value="{{pop.is_view}}" hint-placeholder-val="{{false}}">
+<div class="field"><label class="label" for="pv-name">View name</label><input id="pv-name" class="input" value="{{pop.d.name}}" onChange="{{pop.d.onName}}"></div>
+<div class="field"><label class="label" for="pv-type">Layout</label><select id="pv-type" class="select" value="{{pop.d.type}}" onChange="{{pop.d.onType}}"><sc-for list="{{pop.d.types}}" as="o" hint-placeholder-count="3"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div>
+<sc-if value="{{pop.d.isCalendar}}" hint-placeholder-val="{{false}}"><div class="field"><label class="label" for="pv-date">Show by</label><select id="pv-date" class="select" value="{{pop.d.dateProp}}" onChange="{{pop.d.onDate}}"><sc-for list="{{pop.d.dates}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></div></sc-if>
+<div class="pop-actions">
+<button type="button" class="menu-item" onClick="{{pop.d.left}}">@@I:left:sm@@<span class="mi-l">Move view left</span></button>
+<button type="button" class="menu-item" onClick="{{pop.d.right}}">@@I:chevr:sm@@<span class="mi-l">Move view right</span></button>
+<button type="button" class="menu-item" onClick="{{pop.d.duplicate}}">@@I:copy:sm@@<span class="mi-l">Duplicate view</span></button>
+<sc-if value="{{pop.d.canDelete}}" hint-placeholder-val="{{true}}"><button type="button" class="menu-item danger" onClick="{{pop.d.del}}">@@I:trash:sm@@<span class="mi-l">Delete view</span></button></sc-if>
+</div>
+</sc-if>
+
+</div>
+</sc-if>
+
+<sc-if value="{{modal.open}}" hint-placeholder-val="{{false}}">
+<div class="modal-bg" onMouseDown="{{modal.close}}">
+<div class="{{modal.cls}}" role="dialog" aria-modal="true" onMouseDown="{{modal.stop}}">
+
+<sc-if value="{{modal.is_confirm}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>{{modal.title}}</h2></div>
+<div class="m-body"><p>{{modal.message}}</p></div>
+<div class="m-foot"><button type="button" class="btn" onClick="{{modal.close}}">Cancel</button><button type="button" class="{{modal.okCls}}" onClick="{{modal.ok}}">{{modal.label}}</button></div>
+</sc-if>
+
+<sc-if value="{{modal.is_prompt}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>{{modal.title}}</h2></div>
+<div class="m-body"><label class="field"><span class="label">{{modal.label}}</span><input class="input" data-prompt="1" value="{{modal.value}}" onChange="{{modal.onValue}}" onKeyDown="{{modal.onKey}}"></label></div>
+<div class="m-foot"><button type="button" class="btn" onClick="{{modal.close}}">Cancel</button><button type="button" class="btn btn-primary" onClick="{{modal.ok}}">{{modal.okLabel}}</button></div>
+</sc-if>
+
+<sc-if value="{{modal.is_switcher}}" hint-placeholder-val="{{false}}">
+<div class="sw-in">@@I:search:lg@@<input data-switcher="1" value="{{modal.q}}" onChange="{{modal.onQ}}" onKeyDown="{{modal.onKey}}" placeholder="Search pages, rows, databases and workbooks" aria-label="Quick switcher"></div>
+<div class="sw-list">
+<sc-for list="{{modal.results}}" as="sw" hint-placeholder-count="5"><button type="button" class="{{sw.cls}}" onClick="{{sw.run}}" onMouseMove="{{sw.hover}}"><sc-if value="{{sw.isCmd}}" hint-placeholder-val="{{false}}"><span class="cmd-ic">@@I:chevr:sm@@</span></sc-if><sc-if value="{{sw.isRow}}" hint-placeholder-val="{{false}}"><span class="cmd-ic">@@I:page:sm@@</span></sc-if><sc-if value="{{sw.notCmdRow}}" hint-placeholder-val="{{true}}"><span class="{{sw.tile}}">@@TYPEICON(sw)@@</span></sc-if><span class="sw-t">{{sw.title}}</span><span class="sw-s">{{sw.sub}}</span></button></sc-for>
+<sc-if value="{{modal.noResults}}" hint-placeholder-val="{{false}}"><div class="slash-none">No matches.</div></sc-if>
+</div>
+<div class="sw-foot"><span><span class="kbd">Up</span> <span class="kbd">Down</span> to move</span><span><span class="kbd">Enter</span> to open</span><span><span class="kbd">Esc</span> to close</span></div>
+</sc-if>
+
+<sc-if value="{{modal.is_templates}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>Templates</h2><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body">
+<sc-for list="{{modal.groups}}" as="tg" hint-placeholder-count="2"><div class="field"><span class="label">{{tg.label}}</span><div class="tpl-grid"><sc-for list="{{tg.items}}" as="ti" hint-placeholder-count="2"><button type="button" class="tpl" onClick="{{ti.use}}"><span class="tile mid tile-slate">@@TYPEICON(ti)@@</span><span><span class="tp-n" style="display: block;">{{ti.name}}</span><span class="tp-d" style="display: block;">{{ti.desc}}</span></span></button></sc-for></div></div></sc-for>
+</div>
+</sc-if>
+
+<sc-if value="{{modal.is_settings}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>Settings</h2><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body">
+<div class="set-sec"><span class="label">Appearance</span><div class="seg-row"><button type="button" class="{{modal.lightCls}}" onClick="{{modal.themeLight}}">Light</button><button type="button" class="{{modal.darkCls}}" onClick="{{modal.themeDark}}">Dark</button></div></div>
+<div class="set-sec"><span class="label">Storage</span><div class="{{modal.storageCls}}">{{modal.storageLine}}</div><span class="muted" style="font-size: 12.5px;">This workspace: {{modal.counts}}.</span><div class="row gap8"><button type="button" class="btn" onClick="{{modal.exportWs}}">@@I:download:sm@@<span>Export workspace JSON</span></button></div></div>
+<div class="set-sec"><span class="label">Import</span><textarea class="input mono" rows="4" value="{{modal.importText}}" onChange="{{modal.onImport}}" placeholder="Paste a workspace JSON export here" aria-label="Workspace JSON"></textarea><div class="row gap8"><button type="button" class="btn" onClick="{{modal.doImport}}">@@I:upload:sm@@<span>Import and replace</span></button></div></div>
+<div class="set-sec"><span class="label">Reset</span><div class="row gap8"><button type="button" class="btn" onClick="{{modal.reset}}">Restore demo workspace</button><button type="button" class="btn" style="color: var(--danger);" onClick="{{modal.clear}}">Clear everything</button></div></div>
+<div class="set-sec"><span class="label">Keyboard</span><div class="map"><div class="map-row"><span class="mn">Ctrl K</span><span>Quick switcher</span></div><div class="map-row"><span class="mn">Ctrl \</span><span>Show or hide the sidebar</span></div><div class="map-row"><span class="mn">/ in a block</span><span>Insert blocks and embeds</span></div><div class="map-row"><span class="mn">[[ in a block</span><span>Link a page (creates backlinks)</span></div><div class="map-row"><span class="mn">Ctrl B / I / E</span><span>Bold, italic, code in blocks</span></div><div class="map-row"><span class="mn">Ctrl Shift Up/Down</span><span>Move a block</span></div><div class="map-row"><span class="mn">F2, Ctrl D, Ctrl R</span><span>Edit cell, fill down, fill right</span></div></div></div>
+</div>
+</sc-if>
+
+<sc-if value="{{modal.is_text}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>{{modal.title}}</h2><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body"><textarea class="input mono" rows="14" readOnly="true" value="{{modal.text}}" onFocus="{{modal.selectAll}}" aria-label="{{modal.title}}"></textarea></div>
+<div class="m-foot"><button type="button" class="btn" onClick="{{modal.close}}">Close</button><button type="button" class="btn btn-primary" onClick="{{modal.copy}}">@@I:copy:sm@@<span>Copy</span></button></div>
+</sc-if>
+
+<sc-if value="{{modal.is_csvExport}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>Export {{modal.dbTitle}} as CSV</h2><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body"><span class="muted" style="font-size: 12.5px;">{{modal.rowsLine}}</span><textarea class="input mono" rows="12" readOnly="true" value="{{modal.text}}" onFocus="{{modal.selectAll}}" aria-label="CSV"></textarea></div>
+<div class="m-foot"><button type="button" class="btn" onClick="{{modal.close}}">Close</button><button type="button" class="btn btn-primary" onClick="{{modal.copy}}">@@I:copy:sm@@<span>Copy CSV</span></button></div>
+</sc-if>
+
+<sc-if value="{{modal.is_csvImport}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>Import CSV into {{modal.dbTitle}}</h2><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body">
+<textarea class="input mono" data-csvin="1" rows="8" value="{{modal.text}}" onChange="{{modal.onText}}" placeholder="Name,Status,Due&#10;First row,Done,14/05/2026" aria-label="CSV text"></textarea>
+<label class="chk"><input type="checkbox" checked="{{modal.headerOn}}" onChange="{{modal.onHeader}}"><span>First row is a header</span></label>
+<span class="muted" style="font-size: 12.5px;">{{modal.summary}}</span>
+<sc-if value="{{modal.hasMapping}}" hint-placeholder-val="{{false}}"><div class="map"><sc-for list="{{modal.mapping}}" as="mp" hint-placeholder-count="2"><div class="map-row"><span class="mn">{{mp.name}}</span><span class="{{mp.cls}}">{{mp.target}}</span></div></sc-for></div></sc-if>
+</div>
+<div class="m-foot"><button type="button" class="btn" onClick="{{modal.close}}">Cancel</button><button type="button" class="btn btn-primary" disabled="{{modal.cannotImport}}" onClick="{{modal.doImport}}">Import rows</button></div>
+</sc-if>
+
+<sc-if value="{{modal.is_picker}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>{{modal.title}}</h2><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body">
+<input class="input" data-pickq="1" value="{{modal.q}}" onChange="{{modal.onQ}}" placeholder="Search" aria-label="Search">
+<div class="pk-list"><sc-for list="{{modal.items}}" as="pk" hint-placeholder-count="4"><button type="button" class="pk" onClick="{{pk.pick}}"><span class="{{pk.tile}}">@@TYPEICON(pk)@@</span><span class="pk-t">{{pk.label}}</span><span class="pk-s">{{pk.sub}}</span></button></sc-for><sc-if value="{{modal.empty}}" hint-placeholder-val="{{false}}"><div class="slash-none">No matches.</div></sc-if></div>
+</div>
+</sc-if>
+
+<sc-if value="{{modal.is_sheetEmbed}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>Embed a workbook range</h2><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body">
+<sc-if value="{{modal.noWb}}" hint-placeholder-val="{{false}}"><p>Create a workbook first.</p></sc-if>
+<sc-if value="{{modal.hasWb}}" hint-placeholder-val="{{true}}">
+<div class="emb-grid">
+<label class="field"><span class="label">Workbook</span><select class="select" value="{{modal.wbId}}" onChange="{{modal.onWb}}"><sc-for list="{{modal.wbs}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></label>
+<label class="field"><span class="label">Sheet</span><select class="select" value="{{modal.sheetId}}" onChange="{{modal.onSheet}}"><sc-for list="{{modal.sheets}}" as="o" hint-placeholder-count="2"><option value="{{o.value}}">{{o.label}}</option></sc-for></select></label>
+<label class="field"><span class="label">Range</span><input class="{{modal.rangeCls}}" value="{{modal.range}}" onChange="{{modal.onRange}}" placeholder="A1:D6"></label>
+</div>
+<sc-if value="{{modal.preview.ok}}" hint-placeholder-val="{{false}}"><div class="embed"><div class="embed-body"><div class="emb-table"><sc-for list="{{modal.preview.rows}}" as="pr" hint-placeholder-count="3"><div class="emb-tr"><sc-for list="{{pr.cells}}" as="pc" hint-placeholder-count="3"><div class="{{pc.cls}}">{{pc.text}}</div></sc-for></div></sc-for></div></div></div></sc-if>
+</sc-if>
+</div>
+<div class="m-foot"><button type="button" class="btn" onClick="{{modal.close}}">Cancel</button><button type="button" class="btn btn-primary" disabled="{{modal.cannotSave}}" onClick="{{modal.save}}">Embed range</button></div>
+</sc-if>
+
+<sc-if value="{{modal.is_functions}}" hint-placeholder-val="{{false}}">
+<div class="m-head"><h2>Functions</h2><span class="muted" style="font-size: 12.5px;">{{modal.count}} available</span><button type="button" class="icon-btn" onClick="{{modal.close}}" aria-label="Close">@@I:close@@</button></div>
+<div class="m-body">
+<input class="input" data-fnq="1" value="{{modal.q}}" onChange="{{modal.onQ}}" placeholder="Search functions, for example lookup or date" aria-label="Search functions">
+<div class="fn-list"><sc-for list="{{modal.fns}}" as="fn" hint-placeholder-count="5"><button type="button" class="fn-item" onClick="{{fn.use}}"><span class="fn-s">{{fn.sig}}</span><span class="fn-d">{{fn.desc}}</span></button></sc-for></div>
+<div class="pop-hint">Click a function to insert it into the active cell. GST(amount, [rate]) is a custom function: the GST to add to an amount (10% unless a rate is given).</div>
+</div>
+</sc-if>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{hasToasts}}" hint-placeholder-val="{{false}}">
+<div class="toasts" role="status" aria-live="polite"><sc-for list="{{toasts}}" as="to" hint-placeholder-count="1"><div class="{{to.cls}}"><span>{{to.text}}</span><sc-if value="{{to.hasAction}}" hint-placeholder-val="{{false}}"><button type="button" class="t-act" onClick="{{to.act}}">{{to.actionLabel}}</button></sc-if><button type="button" class="t-x" onClick="{{to.close}}" aria-label="Dismiss">@@I:close:sm@@</button></div></sc-for></div>
+</sc-if>
+
+</div>
+<!--@END-->

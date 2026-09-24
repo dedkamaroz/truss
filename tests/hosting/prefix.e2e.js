@@ -57,8 +57,8 @@ test('the shell, styles and modules all load under a prefix', async ({ page }) =
   // The shell removes app-booting once the sidebar has rendered.
   await expect(page.locator('#app')).not.toHaveClass(/app-booting/, { timeout: 15000 })
 
-  // Styles actually applied, not just requested: tokens.css sets the page background.
-  const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+  // Styles actually applied, not just requested: app.css gives the shell its background.
+  const bg = await page.evaluate(() => getComputedStyle(document.querySelector('.app')).backgroundColor)
   expect(bg).not.toBe('rgba(0, 0, 0, 0)')
 
   expect(failed).toEqual([])
@@ -69,10 +69,7 @@ test('an API call resolves against the prefix', async ({ page }) => {
   await page.goto(base + '/')
   const seen = []
   page.on('request', (r) => { if (r.url().includes('/api/')) seen.push(r.url()) })
-  await page.evaluate(async () => {
-    const { api } = await import('./lib/api.js')
-    await api.get('/api/modules')
-  })
+  await page.evaluate(() => window.TRUSS_REMOTE.get('/api/v2/workspace'))
   expect(seen.length).toBeGreaterThan(0)
   for (const u of seen) expect(u).toContain('/m/truss/api/')
 })
@@ -87,13 +84,13 @@ test('hosted mode is read from the meta tag the proxy injects', async ({ page })
     await route.fulfill({ response: res, body, headers: { ...res.headers(), 'content-length': String(Buffer.byteLength(body)) } })
   })
   await page.goto(base + '/')
-  const hosted = await page.evaluate(async () => (await import('./lib/api.js')).hosted)
+  const hosted = await page.evaluate(() => window.TRUSS_REMOTE.hosted)
   expect(hosted).toBe(true)
 })
 
 test('without the meta tag the client is not in hosted mode', async ({ page }) => {
   await page.goto(base + '/')
-  const hosted = await page.evaluate(async () => (await import('./lib/api.js')).hosted)
+  const hosted = await page.evaluate(() => window.TRUSS_REMOTE.hosted)
   expect(hosted).toBe(false)
 })
 
@@ -116,11 +113,12 @@ test('every mutating request carries the CSRF header the host injected', async (
     if (r.url().includes('/api/') && r.method() !== 'GET') sent.push(r.headers()['x-csrf-token'])
   })
   await page.evaluate(async () => {
-    const { api } = await import('./lib/api.js')
-    await api.post('/api/modules', { type: 'database', title: 'CSRF probe' })
-    await api.upload('/api/attachments?moduleId=x&pageId=y', new Blob(['hi'], { type: 'text/plain' }), 'hi.txt').catch(() => {})
+    const r = window.TRUSS_REMOTE
+    await r.post('/api/v2/sync', { client: 'probe', puts: [{ module: { id: 'csrfprobe', type: 'database', title: 'CSRF probe' }, baseVersion: 0 }], deletes: [] }).catch(() => {})
+    await r.upload('/api/attachments?moduleId=csrfprobe&pageId=y', new File(['hi'], 'hi.txt', { type: 'text/plain' })).catch(() => {})
+    await r.del('/api/attachments/none').catch(() => {})
   })
-  expect(sent.length).toBeGreaterThanOrEqual(2)
+  expect(sent.length).toBeGreaterThanOrEqual(3)
   for (const h of sent) expect(h).toBe('csrf-xyz')
 })
 
@@ -131,8 +129,7 @@ test('locally, with no meta tag, no CSRF header is sent', async ({ page }) => {
     if (r.url().includes('/api/') && r.method() !== 'GET') sent.push(r.headers()['x-csrf-token'])
   })
   await page.evaluate(async () => {
-    const { api } = await import('./lib/api.js')
-    await api.post('/api/modules', { type: 'database', title: 'Local probe' })
+    await window.TRUSS_REMOTE.post('/api/v2/sync', { client: 'probe', puts: [], deletes: [] })
   })
   expect(sent.length).toBeGreaterThan(0)
   for (const h of sent) expect(h).toBeUndefined()

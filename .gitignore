@@ -2,10 +2,15 @@ node_modules/
 data/
 test-results/
 playwright-report/
-.claude/worktrees/
+# Tool state
+.claude/
+.serena/
 
 # Hosting design and plan. They describe the private server Truss is deployed
 # onto - its hostname, auth scheme and volume layout - and this repository is
 # public. Kept on disk, deliberately untracked.
 docs/2026-09-16-hosted-module-design.md
 docs/plans/2026-09-16-hosted-truss.md
+
+# Local copies taken before large changes (git history is the canonical record).
+backups/
