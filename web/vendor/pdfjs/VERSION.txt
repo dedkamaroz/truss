@@ -1,0 +1,3 @@
+PDF.js 6.3.289 (pdfjs-dist, Apache-2.0), vendored unmodified from the npm package so PDFs render offline.
+Files: legacy/build/pdf.min.mjs and legacy/build/pdf.worker.min.mjs (the legacy build carries polyfills; the modern build needs ES2026 Map methods current browsers lack), standard_fonts/, cmaps/. Not included: wasm/ and iccs/ (need wasm-unsafe-eval, which the host CSP does not allow).
+To update: npm pack pdfjs-dist@<version>, then copy the same files over.

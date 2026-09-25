@@ -621,7 +621,7 @@ var DbMix = {
     var self = this, E = this.S.cellEdit;
     var editing = !!(E && E.rowId === row.id && E.propId === prop.id && E.where === where);
     var c = {
-      cls: 'cell cell-' + prop.type + (editing ? ' editing' : '') + (COMPUTED[prop.type] ? ' ro' : ''),
+      cls: 'cell ct-' + prop.type + (editing ? ' editing' : '') + (COMPUTED[prop.type] ? ' ro' : ''),
       style: width ? 'width: ' + width + 'px;' : '',
       editing: editing, showText: false, hasTags: false, tags: [], isCheck: false, checked: false, isLink: false, href: '', isTitle: false, isPlaceholder: false, text: '', placeholder: '', ro: false, label: prop.name, hasBool: false, isErr: false,
       click: function (e) { self.startCellEdit(e, db, row, prop, where); },
@@ -632,7 +632,16 @@ var DbMix = {
       c.draft = E.draft;
       c.onDraft = function (e) { E.draft = e.target.value; self.bump(); };
       c.onKey = function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); self.commitCellEdit(); if (where === 'table' && prop.type === 'title' && (e.ctrlKey || e.metaKey)) self.openPeek(db, row); }
+        // In the table, leaving an edit keeps the cell selected with the table focused, so arrows,
+        // typing and copy/paste carry on from there. Tab moves one cell across.
+        // In the table these behave as in Excel: Tab commits and moves right (wrapping to the next row), Enter
+        // commits and moves down, and when the edit was started by typing, the arrow keys commit and move too.
+        if (where === 'table' && !(e.key === 'Enter' && prop.type === 'title' && (e.ctrlKey || e.metaKey))) {
+          if (e.key === 'Enter' || e.key === 'Tab' || (E.enter && /^Arrow/.test(e.key))) { e.preventDefault(); self.leaveEdit(db, e.key, e.shiftKey); return; }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); self.cancelEdit(db); return; }
+          return;
+        }
+        if (e.key === 'Enter') { e.preventDefault(); self.commitCellEdit(); if (where === 'table' && prop.type === 'title') self.openPeek(db, row); }
         else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); self.S.cellEdit = null; self.bump(); }
         else if (e.key === 'Tab') { e.preventDefault(); self.commitCellEdit(); }
       };
@@ -655,7 +664,7 @@ var DbMix = {
         break;
       }
       case 'number': c.showText = true; c.text = this.numFmt(v, prop.config.format, prop.config.decimals); c.cls += ' num'; break;
-      case 'files': if (v.length) { c.hasTags = true; c.tags = v.map(function (id) { return { text: self.attName(id), cls: 'tag file' }; }); } else if (where === 'peek') { c.isPlaceholder = true; c.placeholder = self.remote ? 'Add files' : 'Files need the Truss server'; } break;
+      case 'files': if (this.remote) this.loadAttachments(db.id); if (v.length) { var ft = this.fileThumbs(v, where); c.hasThumbs = ft.thumbs.length > 0; c.thumbs = ft.thumbs; c.hasTags = ft.tags.length > 0; c.tags = ft.tags; } else if (where === 'peek') { c.isPlaceholder = true; c.placeholder = self.remote ? 'Add files' : 'Files need the Truss server'; } break;
       case 'rollup': c.showText = true; c.text = this.rollupText(db, prop, v); if (prop.config.fn === 'percent_checked' && v !== null) { c.hasBar = true; c.barStyle = 'width: ' + Math.round(v * 100) + '%'; } if (typeof v === 'number') c.cls += ' num'; break;
       case 'lookup': c.showText = true; c.text = v; if (v === '#N/A') c.cls += ' err'; break;
       case 'date': c.showText = true; c.text = this.dateText(row.cells[prop.id]); if (v) { var dd = FE.isoToSerial(dateEnd(row.cells[prop.id]) || v) - FE.isoToSerial(todayIso()); if (dd < 0) c.cls += ' past'; } break;
@@ -745,7 +754,20 @@ var DbMix = {
     var groups = this.groupsFor(db, view, rows);
     var grouped = !!byId(db.props, view.groupBy);
     var collapsed = S.collapsedGroups;
+    // Record the grid as displayed so range selection, keyboard moves and paste line up with it.
+    var flat = [], rIndex = {};
+    groups.forEach(function (g) { if (!grouped || !collapsed[db.id + '|' + view.id + '|' + g.key]) g.rows.forEach(function (r) { rIndex[r.id] = flat.length; flat.push(r.id); }); });
+    this.tblGrid = this.tblGrid || {};
+    this.tblGrid[db.id] = { viewId: view.id, rowIds: flat, colIds: visible.map(function (p) { return p.id; }) };
+    var R = this.selRange(db);
+    cols.forEach(function (co, ci) { self.decorateHeader(co, db, visible[ci], ci, R); });
     return {
+      dbId: db.id,
+      onKey: function (e) { self.tableKey(e, db); },
+      onCopy: function (e) { self.tableCopy(e, db); },
+      onCut: function (e) { self.tableCut(e, db); },
+      onPaste: function (e) { self.tablePaste(e, db); },
+      wrapCls: 'dbt-wrap' + (S.cellDrag && S.cellDrag.moved ? ' selecting' : '') + (S.colDrag && S.colDrag.moved ? ' col-moving' : ''),
       cols: cols, tableStyle: 'min-width: ' + (totalW + 140) + 'px;',
       addProp: function (e) { self.newPropMenu(e, db, null); },
       grouped: grouped,
@@ -763,7 +785,7 @@ var DbMix = {
               selected: on,
               toggleSel: function (e) { sel[row.id] = e.target.checked; self.bump(); },
               menu: function (e) { self.rowMenu(e, db, row); },
-              cells: visible.map(function (p) { var w = p.w || DEFAULT_W[p.type] || 180; return self.cellVals(db, row, p, 'table', w); })
+              cells: visible.map(function (p, ci) { var w = p.w || DEFAULT_W[p.type] || 180, c = self.cellVals(db, row, p, 'table', w); self.decorateCell(c, db, row, p, rIndex[row.id], ci, R); return c; })
             };
           }),
           calcs: visible.map(function (p) {

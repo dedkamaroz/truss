@@ -217,6 +217,7 @@ class Component extends DCLogic {
   /* ---------- root events ---------- */
   onRootKey(e) {
     var k = e.key, mod = e.ctrlKey || e.metaKey, S = this.S;
+    if (S.viewer) { this.viewerKey(e); return; }
     if (mod && (k === 'k' || k === 'K')) { e.preventDefault(); this.openSwitcher(); return; }
     if (mod && k === '\\') { e.preventDefault(); this.toggleSidebar(); return; }
     if (k === 'Escape') {
@@ -226,12 +227,14 @@ class Component extends DCLogic {
     }
   }
   onRootPointerMove(e) {
+    if (this.S.colDrag && this.rangePointerMove(e)) return;
     var R = this.S.resize; if (!R) return;
     var w = clamp(R.w + (e.clientX - R.x), 60, 640);
     if (R.kind === 'db') { var db = this.mod(R.id), p = db && byId(db.props, R.propId); if (p) { p.w = w; this.bump(); } }
     else { var wb = this.mod(R.id), sh = wb && byId(wb.sheets, R.sheetId); if (sh) { sh.colW[R.col] = w; this.bump(); } }
   }
   onRootPointerUp() {
+    if (this.S.cellDrag || this.S.colDrag) this.rangePointerUp();
     if (this.S.resize) { var m = this.mod(this.S.resize.id); this.S.resize = null; this.changed(m); }
     if (this.S.sheetSelecting) { this.S.sheetSelecting = false; }
   }
@@ -345,6 +348,7 @@ class Component extends DCLogic {
       menu: this.menuVals(),
       pop: this.popVals(),
       modal: this.modalVals(),
+      viewer: this.viewerVals(),
       toasts: S.toasts.map(function (t) { return { text: t.text, cls: 'toast toast-' + t.type, hasAction: !!t.action, actionLabel: t.action ? t.action.label : '', act: function () { S.toasts = S.toasts.filter(function (x) { return x !== t; }); if (t.action) t.action.run.call(self); self.bump(); }, close: function () { S.toasts = S.toasts.filter(function (x) { return x !== t; }); self.bump(); } }; }),
       hasToasts: S.toasts.length > 0,
       isLoading: false, hasLoadError: false, loadError: '', retryLoad: null
@@ -362,7 +366,7 @@ class Component extends DCLogic {
       rootCls: 'app ' + (S.theme === 'dark' ? 'dark' : 'light') + ' app-loading', onRootKey: function () { }, onRootMove: function () { }, onRootUp: function () { },
       sb: { groups: [], favs: [], hasFavs: false, isLight: S.theme !== 'dark', isDark: S.theme === 'dark', themeLabel: '', archivedCount: '' }, top: { crumbs: [{ label: 'Truss', cls: 'crumb last', go: function () { } }] },
       isHome: false, isArchive: false, isDb: false, isRowPage: false, isSheet: false, isNb: false, hasPeek: false, mainCls: 'main',
-      menu: { open: false }, pop: { open: false }, modal: { open: false }, toasts: [], hasToasts: false,
+      menu: { open: false }, pop: { open: false }, modal: { open: false }, viewer: { open: false }, toasts: [], hasToasts: false,
       isLoading: !!S.loading, hasLoadError: !!S.loadError, loadError: S.loadError || '',
       retryLoad: function () { self.syncBoot(); }
     };

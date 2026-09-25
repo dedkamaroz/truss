@@ -6,7 +6,7 @@ import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
 
 const APP = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'app')
-const ORDER = ['boot', 'icons', 'engine', 'helpers', 'core', 'db', 'sheet', 'nb', 'sync']
+const ORDER = ['boot', 'icons', 'engine', 'helpers', 'core', 'db', 'sheet', 'nb', 'dbrange', 'viewer', 'sync']
 
 export function loadApp({ meta = {} } = {}) {
   const store = {}
@@ -41,7 +41,7 @@ export function loadApp({ meta = {} } = {}) {
     fetch: () => Promise.reject(new Error('no network in tests')),
   })
   const src = ORDER.map((f) => fs.readFileSync(path.join(APP, f + '.js'), 'utf8')).join('\n;\n')
-  vm.runInContext(src + '\n;globalThis.__T = { Component: Component, merge3: merge3, FE: FE, TRUSS_REMOTE: TRUSS_REMOTE, dateStart: dateStart, dateEnd: dateEnd, mkDate: mkDate, mkBlock: mkBlock, normModule: normModule };', ctx, { filename: 'web-app.js' })
+  vm.runInContext(src + '\n;globalThis.__T = { Component: Component, merge3: merge3, FE: FE, TRUSS_REMOTE: TRUSS_REMOTE, dateStart: dateStart, dateEnd: dateEnd, mkDate: mkDate, mkBlock: mkBlock, normModule: normModule, tsvParse: tsvParse, tsvStringify: tsvStringify };', ctx, { filename: 'web-app.js' })
   return { ...ctx.__T, ctx, store }
 }
 

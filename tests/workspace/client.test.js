@@ -265,3 +265,180 @@ test('malformed documents from the server are filled in rather than breaking ren
   c.renderVals()
   for (const m of c.ws.modules) { c.goModule(m.id); c.renderVals() }
 })
+
+test('tab-separated clipboard text round-trips, including tabs, quotes and newlines inside cells', () => {
+  const { tsvParse, tsvStringify } = loadApp()
+  const rows = [['a', 'b\tc'], ['say "hi"', 'two\nlines'], ['', 'x']]
+  deq(tsvParse(tsvStringify(rows)), rows)
+  deq(tsvParse('1\t2\r\n3\t4\r\n'), [['1', '2'], ['3', '4']])
+})
+
+// A table with three text columns and three rows, rendered once so the grid is known.
+function rangeFixture() {
+  const app = loadApp()
+  const c = new app.Component({})
+  c.createModule('database', 'blank', 'Range test')
+  const db = c.ws.modules.find((m) => m.title === 'Range test')
+  const a = c.addProp(db, 'text', null, 'A'), b = c.addProp(db, 'text', null, 'B')
+  const tp = db.props[0]
+  for (let i = 1; i <= 3; i++) { const r = c.addRow(db, {}); r.cells[tp.id] = 'r' + i; r.cells[a.id] = 'a' + i; r.cells[b.id] = 'b' + i }
+  c.goModule(db.id)
+  c.renderVals()
+  const g = c.tableGrid(db)
+  const at = (r, col) => ({ rowId: g.rowIds[r], propId: g.colIds[col] })
+  const grid = () => db.rows.map((r) => db.props.map((p) => r.cells[p.id] ?? '').join('|'))
+  return { app, c, db, a, b, tp, at, grid }
+}
+
+test('a dragged range highlights its cells and copies as tab-separated text', () => {
+  const { c, db, at } = rangeFixture()
+  c.setCellSel(db, at(0, 1), at(1, 2))
+  const v = c.renderVals()
+  const rows = v.db.groups[0].rows
+  assert.equal(rows.flatMap((r) => r.cells).filter((x) => / csel/.test(x.cls)).length, 4)
+  assert.match(rows[0].cells[1].style, /box-shadow/)
+  const R = c.selRange(db)
+  assert.equal(c.rangeText(db, R), 'a1\tb1\r\na2\tb2')
+})
+
+test('delete clears the range and Undo restores it', () => {
+  const { c, db, at, grid } = rangeFixture()
+  const before = grid()
+  c.setCellSel(db, at(0, 1), at(2, 2))
+  c.clearRange(db, c.selRange(db))
+  deq(grid(), ['r1||', 'r2||', 'r3||'])
+  const toast = c.S.toasts[c.S.toasts.length - 1]
+  assert.equal(toast.action.label, 'Undo')
+  toast.action.run.call(c)
+  const db2 = c.ws.modules.find((m) => m.id === db.id)
+  deq(db2.rows.map((r) => db2.props.map((p) => r.cells[p.id] ?? '').join('|')), JSON.parse(JSON.stringify(before)))
+})
+
+test('paste fills from the active cell, adds rows as needed, and a single value fills the range', () => {
+  const { c, db, at, grid } = rangeFixture()
+  c.setCellSel(db, at(2, 1))
+  c.renderVals()
+  c.pasteGrid(db, c.selRange(db), 'x1\ty1\r\nx2\ty2')
+  deq(grid(), ['r1|a1|b1', 'r2|a2|b2', 'r3|x1|y1', '|x2|y2'])
+  c.renderVals()
+  c.setCellSel(db, at(0, 1), at(1, 2))
+  c.pasteGrid(db, c.selRange(db), 'z')
+  deq(grid().slice(0, 2), ['r1|z|z', 'r2|z|z'])
+})
+
+test('pasted text is converted to each property type', () => {
+  const { c, db } = rangeFixture()
+  const n = c.addProp(db, 'number', null, 'N'), d = c.addProp(db, 'date', null, 'D'), s = c.addProp(db, 'select', null, 'S'), k = c.addProp(db, 'checkbox', null, 'K')
+  assert.equal(c.textToCell(db, n, '$1,250.50'), 1250.5)
+  assert.equal(c.textToCell(db, d, '14/05/2026'), '2026-05-14')
+  deq(c.textToCell(db, d, '01/09/2026 - 03/09/2026'), { start: '2026-09-01', end: '2026-09-03' })
+  const id = c.textToCell(db, s, 'Urgent')
+  assert.equal(s.config.options.find((o) => o.id === id).name, 'Urgent')
+  assert.equal(c.textToCell(db, k, 'Yes'), true)
+  assert.equal(c.textToCell(db, c.addProp(db, 'files', null, 'F'), 'x.pdf'), undefined)
+})
+
+test('selected columns move together when a header is dragged', () => {
+  const { c, db, a, b, tp } = rangeFixture()
+  const g = c.tableGrid(db)
+  c.setCellSel(db, { rowId: g.rowIds[0], propId: a.id }, { rowId: g.rowIds[2], propId: b.id })
+  assert.equal(c.selRange(db).full, true)
+  c.moveColumns(db, [a.id, b.id], tp.id, 'before')
+  deq(db.props.map((p) => p.name), ['A', 'B', 'Name'])
+  c.moveColumns(db, [a.id], b.id, 'after')
+  deq(db.props.map((p) => p.name), ['B', 'A', 'Name'])
+})
+
+test('table cells render exactly as wide as their headers', () => {
+  const { c, db } = rangeFixture()
+  const v = c.renderVals()
+  const cols = v.db.cols.map((x) => x.style)
+  const cells = v.db.groups[0].rows[0].cells.map((x) => x.style.replace(/ box-shadow.*$/, ''))
+  deq(cells, JSON.parse(JSON.stringify(cols)))
+  // The type class must not collide with the inner .cell-text span's class.
+  for (const x of v.db.groups[0].rows[0].cells) assert.doesNotMatch(x.cls, /\bcell-text\b/)
+})
+
+test('file thumbnails: images and PDFs preview, other files stay as tags', () => {
+  const { Component } = loadApp()
+  const c = new Component({})
+  c.remote = { url: (p) => p, get: async () => [] }
+  c.attLoaded = {}
+  c.attMeta = {
+    i1: { id: 'i1', filename: 'id.png', mime: 'image/png', size: 10 },
+    p1: { id: 'p1', filename: 'statement.pdf', mime: 'application/pdf', size: 10 },
+    d1: { id: 'd1', filename: 'notes.docx', mime: 'application/octet-stream', size: 10 },
+  }
+  c.thumbs = { p1: { state: 'ok', src: 'data:image/jpeg;base64,xx' } }
+  const t = c.fileThumbs(['i1', 'p1', 'd1'], 'table')
+  deq(t.thumbs.map((x) => [x.name, x.hasSrc, x.cls]), [['id.png', true, 'thumb'], ['statement.pdf', true, 'thumb pdf']])
+  deq(t.tags.map((x) => x.text), ['notes.docx'])
+  t.thumbs[1].open()
+  assert.equal(c.S.viewer.i, 1)
+  deq(c.S.viewer.ids, ['i1', 'p1', 'd1'])
+})
+
+test('the viewer frame is 1280 x 720, or 9:16 for portrait files, within the window', () => {
+  const { Component, ctx } = loadApp()
+  const c = new Component({})
+  ctx.window.innerWidth = 1920; ctx.window.innerHeight = 1080
+  deq(c.viewerFrame(false), { w: 1280, h: 720 })
+  const p = c.viewerFrame(true)
+  assert.equal(p.w, Math.round(p.h * 9 / 16))
+  assert.ok(p.h <= 1080 - 48)
+  ctx.window.innerWidth = 1000; ctx.window.innerHeight = 700
+  const small = c.viewerFrame(false)
+  assert.ok(small.w <= 1000 && Math.abs(small.w / small.h - 16 / 9) < 0.01)
+})
+
+test('viewer keys: arrows change file, Page Down changes page, + and 0 zoom, Escape closes', () => {
+  const { Component } = loadApp()
+  const c = new Component({})
+  c.remote = { url: (p) => p, get: async () => [] }
+  c.attMeta = { a: { id: 'a', filename: 'a.pdf', mime: 'application/pdf' }, b: { id: 'b', filename: 'b.png', mime: 'image/png' } }
+  c.openViewer(['a', 'b'], 'a')
+  c.S.viewer.pdf.a = { pages: 3 }
+  const key = (k) => c.viewerKey({ key: k, preventDefault() {} })
+  key('PageDown'); assert.equal(c.S.viewer.page, 2)
+  key('PageDown'); key('PageDown'); assert.equal(c.S.viewer.page, 3)
+  key('+'); assert.equal(c.S.viewer.zoom, 1.25)
+  key('0'); assert.equal(c.S.viewer.zoom, 1)
+  key('ArrowRight'); assert.equal(c.S.viewer.i, 1); assert.equal(c.S.viewer.page, 1)
+  key('ArrowRight'); assert.equal(c.S.viewer.i, 0)
+  key('Escape'); assert.equal(c.S.viewer, null)
+})
+
+test('Tab moves right and wraps to the next row; Enter returns to where the Tab run started, one row down', () => {
+  const { c, db, at } = rangeFixture()
+  const g = c.tableGrid(db)
+  const pos = (f) => [g.rowIds.indexOf(f.rowId), g.colIds.indexOf(f.propId)]
+  deq(pos(c.stepFrom(db, at(0, 0).rowId, at(0, 0).propId, 'Tab', false)), [0, 1])
+  deq(pos(c.stepFrom(db, at(0, 1).rowId, at(0, 1).propId, 'Tab', false)), [0, 2])
+  // Enter after Tab, Tab goes back to column 0 of the next row.
+  deq(pos(c.stepFrom(db, at(0, 2).rowId, at(0, 2).propId, 'Enter', false)), [1, 0])
+  // The last cell of a row wraps to the first cell of the next; Shift+Tab wraps back.
+  c.S.tabRun = null
+  deq(pos(c.stepFrom(db, at(1, 2).rowId, at(1, 2).propId, 'Tab', false)), [2, 0])
+  deq(pos(c.stepFrom(db, at(2, 0).rowId, at(2, 0).propId, 'Tab', true)), [1, 2])
+  // The very last cell stays put.
+  deq(pos(c.stepFrom(db, at(2, 2).rowId, at(2, 2).propId, 'Tab', false)), [2, 2])
+})
+
+test('typing into a cell then Tab saves it and moves to the next cell, ready to type again', () => {
+  const { c, db, at, grid } = rangeFixture()
+  const g = c.tableGrid(db)
+  const row = db.rows.find((r) => r.id === g.rowIds[0]), a = db.props.find((p) => p.id === g.colIds[1])
+  c.editCellAt(db, row, a, 'x')                    // type-to-edit replaces the value
+  c.S.cellEdit.draft = 'xyz'
+  c.leaveEdit(db, 'Tab', false)
+  assert.equal(c.S.cellEdit, null)
+  deq(grid()[0], 'r1|xyz|b1')
+  deq(c.S.cellSel.f, JSON.parse(JSON.stringify(at(0, 2))))
+  // Arrow keys also finish an edit that was started by typing.
+  const b = db.props.find((p) => p.id === g.colIds[2])
+  c.editCellAt(db, row, b, 'q')
+  assert.equal(c.S.cellEdit.enter, true)
+  c.leaveEdit(db, 'ArrowDown', false)
+  deq(grid()[0], 'r1|xyz|q')
+  deq(c.S.cellSel.f, JSON.parse(JSON.stringify(at(1, 2))))
+})

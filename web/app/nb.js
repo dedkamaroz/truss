@@ -460,7 +460,13 @@ var NbMix = {
       url: b.att ? this.attUrl(b.att) : '', name: (a && a.filename) || b.name || (isImg ? 'Image' : 'File'), size: this.attSize(a ? a.size : b.size),
       accept: isImg ? 'image/*' : '', pickLabel: isImg ? 'Upload an image' : 'Upload a file',
       emptyText: gone ? 'This file is no longer on the server.' : isImg ? 'No image yet' : 'No file yet',
-      open: function () { if (b.att) self.openAttachment(b.att); },
+      // Opens the viewer on this file, able to step through every image and PDF on the page.
+      open: function () {
+        if (!b.att) return;
+        if (!self.canPreview(b.att)) return self.openAttachment(b.att);
+        var R = self.ctResolve(ct), ids = (R ? R.blocks : [b]).filter(function (x) { return (x.type === 'image' || x.type === 'file') && x.att && self.canPreview(x.att); }).map(function (x) { return x.att; });
+        self.openViewer(ids, b.att);
+      },
       onPick: function (e) {
         var f = e.target.files && e.target.files[0]; e.target.value = '';
         if (!f) return;
@@ -480,7 +486,7 @@ var NbMix = {
     var list = this.attList(modId, ownerId).filter(function (a) { return !used[a.id]; });
     return {
       remote: true, has: list.length > 0, count: plural(list.length, 'attachment'),
-      list: list.map(function (a) { return { name: a.filename, size: self.attSize(a.size), open: function () { self.openAttachment(a.id); }, remove: function () { self.confirm({ title: 'Delete "' + a.filename + '"?', message: 'The file is removed from the server. This cannot be undone.', label: 'Delete', danger: true }, function () { self.deleteAttachment(a.id); }); } }; }),
+      list: list.map(function (a) { return { name: a.filename, size: self.attSize(a.size), open: function () { if (self.canPreview(a.id)) self.openViewer(list.filter(function (x) { return self.canPreview(x.id); }).map(function (x) { return x.id; }), a.id); else self.openAttachment(a.id); }, remove: function () { self.confirm({ title: 'Delete "' + a.filename + '"?', message: 'The file is removed from the server. This cannot be undone.', label: 'Delete', danger: true }, function () { self.deleteAttachment(a.id); }); } }; }),
       onPick: function (e) { var fs = Array.prototype.slice.call(e.target.files || []); e.target.value = ''; if (fs.length) self.uploadFiles(fs, modId, ownerId); }
     };
   },

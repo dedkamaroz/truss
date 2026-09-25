@@ -134,3 +134,14 @@ test('locally, with no meta tag, no CSRF header is sent', async ({ page }) => {
   expect(sent.length).toBeGreaterThan(0)
   for (const h of sent) expect(h).toBeUndefined()
 })
+
+test('the vendored PDF.js resolves under the prefix', async ({ page }) => {
+  await page.goto(base + '/')
+  await expect(page.locator('#app')).not.toHaveClass(/app-booting/, { timeout: 15000 })
+  const r = await page.evaluate(async () => {
+    const m = await import(window.TRUSS_PDF.base + 'pdf.min.mjs')
+    return { base: window.TRUSS_PDF.base, ok: typeof m.getDocument === 'function' }
+  })
+  expect(r.base).toContain('/m/truss/vendor/pdfjs/')
+  expect(r.ok).toBe(true)
+})

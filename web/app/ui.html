@@ -1,8 +1,9 @@
 <!-- Truss UI template. {{path}} holes, <sc-for>, <sc-if>, @@MACRO(arg)@@ and @@I:icon@@ are expanded by runtime.js. -->
 <!--@CELL-->
-<div class="{{$.cls}}" style="{{$.style}}" onClick="{{$.click}}">
+<div class="{{$.cls}}" style="{{$.style}}" onClick="{{$.click}}" onMouseDown="{{$.down}}" onMouseEnter="{{$.enter}}" data-ck="{{$.ck}}">
 <sc-if value="{{$.editing}}" hint-placeholder-val="{{false}}"><input class="cell-input" data-cellinput="1" type="text" value="{{$.draft}}" onChange="{{$.onDraft}}" onKeyDown="{{$.onKey}}" onBlur="{{$.onBlur}}" aria-label="{{$.label}}"></sc-if>
 <sc-if value="{{$.showText}}" hint-placeholder-val="{{true}}"><span class="cell-text">{{$.text}}</span></sc-if>
+<sc-if value="{{$.hasThumbs}}" hint-placeholder-val="{{false}}"><span class="thumbs"><sc-for list="{{$.thumbs}}" as="fth" hint-placeholder-count="1"><button type="button" class="{{fth.cls}}" onClick="{{fth.open}}" title="{{fth.name}}" aria-label="Preview {{fth.name}}"><sc-if value="{{fth.hasSrc}}" hint-placeholder-val="{{false}}"><img src="{{fth.src}}" alt="" loading="lazy" draggable="false"></sc-if><sc-if value="{{fth.noSrc}}" hint-placeholder-val="{{true}}"><span class="thumb-ph">{{fth.label}}</span></sc-if></button></sc-for></span></sc-if>
 <sc-if value="{{$.hasTags}}" hint-placeholder-val="{{false}}"><span class="tags"><sc-for list="{{$.tags}}" as="tg" hint-placeholder-count="1"><span class="{{tg.cls}}">{{tg.text}}</span></sc-for></span></sc-if>
 <sc-if value="{{$.isCheck}}" hint-placeholder-val="{{false}}"><input type="checkbox" class="cb" checked="{{$.checked}}" onChange="{{$.toggle}}" onClick="{{$.stop}}" disabled="{{$.ro}}" aria-label="{{$.label}}"></sc-if>
 <sc-if value="{{$.isLink}}" hint-placeholder-val="{{false}}"><a class="cell-link" href="{{$.href}}" target="_blank" rel="noopener noreferrer" onClick="{{$.stop}}">{{$.text}}</a></sc-if>
@@ -52,7 +53,7 @@
 <sc-if value="{{b.isDivider}}" hint-placeholder-val="{{false}}"><hr></sc-if>
 <sc-if value="{{b.isTableBlk}}" hint-placeholder-val="{{false}}"><div class="tblk">@@TGRID(b.tg)@@</div></sc-if>
 <sc-if value="{{b.isImage}}" hint-placeholder-val="{{false}}">
-<sc-if value="{{b.media.has}}" hint-placeholder-val="{{false}}"><figure class="media-img"><img src="{{b.media.url}}" alt="{{b.media.name}}" onDoubleClick="{{b.media.open}}"><figcaption>{{b.media.name}}</figcaption></figure></sc-if>
+<sc-if value="{{b.media.has}}" hint-placeholder-val="{{false}}"><figure class="media-img"><img src="{{b.media.url}}" alt="{{b.media.name}}" onClick="{{b.media.open}}" title="Click to view"><figcaption>{{b.media.name}}</figcaption></figure></sc-if>
 <sc-if value="{{b.media.none}}" hint-placeholder-val="{{true}}">@@MEDIAPICK(b.media)@@</sc-if>
 </sc-if>
 <sc-if value="{{b.isFile}}" hint-placeholder-val="{{false}}">
@@ -259,11 +260,11 @@
 <sc-if value="{{db.hasSel}}" hint-placeholder-val="{{false}}"><div class="selbar"><span>{{db.selLabel}}</span><button type="button" class="tb-btn" onClick="{{db.deleteSel}}">@@I:trash:sm@@<span>Delete</span></button><button type="button" class="tb-btn" onClick="{{db.clearSel}}">Clear selection</button></div></sc-if>
 
 <sc-if value="{{db.viewIs.table}}" hint-placeholder-val="{{true}}">
-<div class="dbt-wrap">
+<div class="{{db.wrapCls}}" data-dbt="{{db.dbId}}" tabIndex="-1" onKeyDown="{{db.onKey}}" onCopy="{{db.onCopy}}" onCut="{{db.onCut}}" onPaste="{{db.onPaste}}" aria-label="Table - drag across cells to select them">
 <div class="dbt" style="{{db.tableStyle}}">
 <div class="dbt-head">
 <div class="dbt-gutter"><input type="checkbox" class="row-sel" checked="{{db.allSel}}" onChange="{{db.toggleAll}}" aria-label="Select all rows"></div>
-<sc-for list="{{db.cols}}" as="co" hint-placeholder-count="4"><div class="dbt-th" style="{{co.style}}" data-th="{{co.id}}"><button type="button" class="row gap6 grow" style="height: 100%; min-width: 0;" onClick="{{co.open}}">@@PICON(co)@@<span class="th-name">{{co.name}}</span><sc-if value="{{co.hasSort}}" hint-placeholder-val="{{false}}"><span class="th-sort">{{co.sortMark}}</span></sc-if></button><span class="th-resize" onPointerDown="{{co.resize}}"></span></div></sc-for>
+<sc-for list="{{db.cols}}" as="co" hint-placeholder-count="4"><div class="{{co.cls}}" style="{{co.style}}" data-th="{{co.id}}" onPointerDown="{{co.down}}"><button type="button" class="row gap6 grow" style="height: 100%; min-width: 0;" onClick="{{co.open}}">@@PICON(co)@@<span class="th-name">{{co.name}}</span><sc-if value="{{co.hasSort}}" hint-placeholder-val="{{false}}"><span class="th-sort">{{co.sortMark}}</span></sc-if></button><span class="th-resize" onPointerDown="{{co.resize}}"></span></div></sc-for>
 <button type="button" class="dbt-add" onClick="{{db.addProp}}" aria-label="Add a property">@@I:plus:sm@@</button>
 </div>
 <sc-for list="{{db.groups}}" as="gr" hint-placeholder-count="1">
@@ -700,5 +701,26 @@
 <div class="toasts" role="status" aria-live="polite"><sc-for list="{{toasts}}" as="to" hint-placeholder-count="1"><div class="{{to.cls}}"><span>{{to.text}}</span><sc-if value="{{to.hasAction}}" hint-placeholder-val="{{false}}"><button type="button" class="t-act" onClick="{{to.act}}">{{to.actionLabel}}</button></sc-if><button type="button" class="t-x" onClick="{{to.close}}" aria-label="Dismiss">@@I:close:sm@@</button></div></sc-for></div>
 </sc-if>
 
+<sc-if value="{{viewer.open}}" hint-placeholder-val="{{false}}">
+<div class="vw-back" onClick="{{viewer.backdrop}}" role="dialog" aria-modal="true" aria-label="{{viewer.name}}">
+<sc-if value="{{viewer.many}}" hint-placeholder-val="{{false}}"><button type="button" class="vw-nav prev" onClick="{{viewer.prev}}" aria-label="Previous file (Left arrow)">@@I:left@@</button><button type="button" class="vw-nav next" onClick="{{viewer.next}}" aria-label="Next file (Right arrow)">@@I:chevr@@</button></sc-if>
+<div class="vw-head" style="{{viewer.barStyle}}">
+<span class="vw-name" title="{{viewer.name}}">{{viewer.name}}</span><span class="muted vw-meta">{{viewer.size}}</span><span class="muted vw-meta">{{viewer.counter}}</span>
+<span class="grow"></span>
+<sc-if value="{{viewer.hasPages}}" hint-placeholder-val="{{false}}"><span class="vw-group"><button type="button" class="icon-btn" onClick="{{viewer.prevPage}}" disabled="{{viewer.prevPageOff}}" aria-label="Previous page (Page Up)">@@I:up:sm@@</button><span class="vw-label">{{viewer.pageLabel}}</span><button type="button" class="icon-btn" onClick="{{viewer.nextPage}}" disabled="{{viewer.nextPageOff}}" aria-label="Next page (Page Down)">@@I:chevd:sm@@</button></span></sc-if>
+<span class="vw-group"><button type="button" class="icon-btn vw-txt" onClick="{{viewer.zoomOut}}" aria-label="Zoom out (-)">-</button><button type="button" class="vw-label vw-zoom" onClick="{{viewer.zoomFit}}" title="Fit (0)">{{viewer.zoomLabel}}</button><button type="button" class="icon-btn vw-txt" onClick="{{viewer.zoomIn}}" aria-label="Zoom in (+)">+</button></span>
+<button type="button" class="icon-btn" onClick="{{viewer.openTab}}" aria-label="Open in a new tab">@@I:open:sm@@</button>
+<button type="button" class="icon-btn" onClick="{{viewer.close}}" aria-label="Close (Esc)">@@I:close:sm@@</button>
+</div>
+<div class="vw-frame" style="{{viewer.frameStyle}}">
+<div class="{{viewer.bodyCls}}" style="{{viewer.bodyStyle}}" onWheel="{{viewer.onWheel}}" onPointerDown="{{viewer.panDown}}" onPointerMove="{{viewer.panMove}}" onPointerUp="{{viewer.panUp}}">
+<sc-if value="{{viewer.hasSrc}}" hint-placeholder-val="{{false}}"><img class="vw-img" src="{{viewer.src}}" alt="{{viewer.name}}" style="{{viewer.imgStyle}}" onLoad="{{viewer.onImgLoad}}" draggable="false"></sc-if>
+<sc-if value="{{viewer.loading}}" hint-placeholder-val="{{false}}"><div class="vw-msg"><span class="spinner"></span><span>Rendering...</span></div></sc-if>
+<sc-if value="{{viewer.hasError}}" hint-placeholder-val="{{false}}"><div class="vw-msg"><span>{{viewer.error}}</span><button type="button" class="btn" onClick="{{viewer.openTab}}">Open in a new tab</button></div></sc-if>
+<sc-if value="{{viewer.noPreview}}" hint-placeholder-val="{{false}}"><div class="vw-msg">@@I:file@@<span>No preview for this type of file.</span><button type="button" class="btn" onClick="{{viewer.openTab}}">Open in a new tab</button></div></sc-if>
+</div>
+</div>
+</div>
+</sc-if>
 </div>
 <!--@END-->
