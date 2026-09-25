@@ -307,3 +307,40 @@ test('Excel-style entry: type, Tab to the next cell (wrapping rows), Enter, and 
   await expect.poll(() => tableText(page)).toEqual(['r1|zz|b1', 'R2|yy|b2'])
   await waitSaved(page)
 })
+
+test('a large table stays responsive: bounded rendering, scrolling, new rows, typing', async ({ page }) => {
+  await open(page)
+  // Seed 1500 rows straight through the API.
+  const t = await token(page)
+  const rows = Array.from({ length: 1500 }, (_, i) => ({ id: 'bigrow' + i, cells: { name: 'Row ' + (i + 1), note: 'Note ' + (i + 1) }, body: [], createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' }))
+  const doc = { id: 'bigtable', type: 'database', title: 'Big table', color: 'teal', props: [{ id: 'name', type: 'title', name: 'Name', config: {} }, { id: 'note', type: 'text', name: 'Note', config: {} }], rows, views: [{ id: 'v1', type: 'table', name: 'Table' }] }
+  const r = await page.request.post('/api/v2/sync', { headers: { 'X-Truss-Token': t, 'Content-Type': 'application/json' }, data: { client: 'seed', puts: [{ module: doc, baseVersion: 0 }], deletes: [] } })
+  expect(r.status()).toBe(200)
+  await page.reload()
+  await expect(page.locator('#app')).not.toHaveClass(/app-booting/)
+  await page.locator('.sb').getByText('Big table').click()
+  await expect(page.locator('.dbt-row').first()).toContainText('Row 1')
+  // Only rows near the view are in the page.
+  expect(await page.locator('.dbt-row').count()).toBeLessThan(120)
+  // Scrolling to the end renders the last rows.
+  await page.locator('[data-scroll="main"]').evaluate((el) => { el.scrollTop = el.scrollHeight })
+  await expect(page.locator('.dbt-row', { hasText: 'Row 1500' })).toBeVisible()
+  expect(await page.locator('.dbt-row').count()).toBeLessThan(120)
+  // Back to the top, then New: the new last row is brought into view and edited.
+  await page.locator('[data-scroll="main"]').evaluate((el) => { el.scrollTop = 0 })
+  await expect(page.locator('.dbt-row').first()).toContainText('Row 1')
+  await page.locator('.new-btn').first().click()
+  await expect(page.locator('[data-cellinput]')).toBeFocused()
+  await page.keyboard.type('Row 1501')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.dbt-row', { hasText: 'Row 1501' })).toBeVisible()
+  // Typing into a cell costs no long frames.
+  await page.evaluate(() => { window.__lf = []; new PerformanceObserver((l) => { for (const f of l.getEntries()) window.__lf.push(f.duration) }).observe({ type: 'long-animation-frame' }) })
+  await page.locator('.dbt-row', { hasText: 'Row 1501' }).locator('.cell').nth(1).click()
+  await page.keyboard.type('quick typing test', { delay: 20 })
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.dbt-row', { hasText: 'Row 1501' })).toContainText('quick typing test')
+  const lf = await page.evaluate(() => window.__lf)
+  expect(Math.max(0, ...lf)).toBeLessThan(150)
+  await waitSaved(page)
+})

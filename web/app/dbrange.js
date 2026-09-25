@@ -204,7 +204,12 @@ var DbRangeMix = {
     if (k.length === 1 && !mod && !e.altKey && typeable[prop.type]) { e.preventDefault(); this.editCellAt(db, row, prop, k); }
   },
   scrollToCell: function (f) {
-    this.later(function () { var el = document.querySelector('[data-ck="' + f.rowId + '|' + f.propId + '"]'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, 0);
+    var self = this;
+    this.later(function () {
+      var el = document.querySelector('[data-ck="' + f.rowId + '|' + f.propId + '"]');
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      else if (self.tblWin) self.revealRow(self.db(self.tblWin.dbId), f.rowId);
+    }, 0);
   },
   editCellAt: function (db, row, prop, typed) {
     this.setCellSel(db, { rowId: row.id, propId: prop.id });

@@ -190,7 +190,7 @@
 <sc-if value="{{top.hasMore}}" hint-placeholder-val="{{false}}"><button type="button" class="icon-btn" onClick="{{top.more}}" aria-label="More actions">@@I:more:dots@@</button></sc-if>
 </header>
 
-<div class="scroll" data-scroll="main">
+<div class="scroll" data-scroll="main" onScroll="{{onMainScroll}}">
 
 <sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}"><div class="load-pane" role="status"><span class="spinner"></span><span>Loading your workspace...</span></div></sc-if>
 <sc-if value="{{hasLoadError}}" hint-placeholder-val="{{false}}"><div class="load-pane err" role="alert"><strong>Truss could not load the workspace</strong><span class="muted">{{loadError}}</span><button type="button" class="btn btn-primary" onClick="{{retryLoad}}">Try again</button></div></sc-if>
@@ -270,12 +270,14 @@
 <sc-for list="{{db.groups}}" as="gr" hint-placeholder-count="1">
 <sc-if value="{{gr.showHead}}" hint-placeholder-val="{{false}}"><div class="dbt-group"><button type="button" class="{{gr.chevCls}}" onClick="{{gr.toggle}}" aria-label="Collapse group">@@I:chevr:sm@@</button><span class="{{gr.tagCls}}">{{gr.label}}</span><span class="muted" style="font-weight: 400;">{{gr.count}}</span></div></sc-if>
 <sc-if value="{{gr.open}}" hint-placeholder-val="{{true}}">
+<div class="dbt-rows" data-grp="{{gr.gid}}"><div class="dbt-spacer" style="{{gr.padTop}}"></div>
 <sc-for list="{{gr.rows}}" as="r" hint-placeholder-count="6">
 <div class="{{r.cls}}">
 <div class="dbt-gutter"><button type="button" class="row-handle" onClick="{{r.menu}}" aria-label="Row actions">@@I:drag:sm dots@@</button><input type="checkbox" class="row-sel" checked="{{r.selected}}" onChange="{{r.toggleSel}}" aria-label="Select row"></div>
 <sc-for list="{{r.cells}}" as="c" hint-placeholder-count="4">@@CELL(c)@@</sc-for>
 </div>
 </sc-for>
+<div class="dbt-spacer" style="{{gr.padBottom}}"></div></div>
 <button type="button" class="dbt-new" onClick="{{gr.add}}">@@I:plus:sm@@<span>New</span></button>
 <div class="dbt-calcs"><div class="dbt-gutter"></div><sc-for list="{{gr.calcs}}" as="k" hint-placeholder-count="4"><button type="button" class="{{k.cls}}" style="{{k.style}}" onClick="{{k.open}}"><span>{{k.label}}</span><strong>{{k.value}}</strong></button></sc-for></div>
 </sc-if>

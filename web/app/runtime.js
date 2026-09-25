@@ -138,7 +138,8 @@
           var s2 = Object.create(scope);
           s2[n.as] = list[j];
           s2.$index = j;
-          build(n.kids, s2, key + ':' + j, out);
+          var it = list[j];
+          build(n.kids, s2, key + ':' + (it && it.$key != null ? '#' + it.$key : j), out);
         }
       } else {
         var props = {};

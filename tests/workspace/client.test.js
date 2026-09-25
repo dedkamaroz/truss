@@ -442,3 +442,40 @@ test('typing into a cell then Tab saves it and moves to the next cell, ready to 
   deq(grid()[0], 'r1|xyz|q')
   deq(c.S.cellSel.f, JSON.parse(JSON.stringify(at(1, 2))))
 })
+
+test('large tables render a window of rows, keyed by row id, with a spacer for the rest', () => {
+  const { Component } = loadApp()
+  const c = new Component({})
+  const db = c.ws.modules.find((m) => m.title === 'Tasks')
+  const base = db.rows.slice()
+  while (db.rows.length < 300) { const r = JSON.parse(JSON.stringify(base[db.rows.length % base.length])); r.id = 'big' + db.rows.length; db.rows.push(r) }
+  c.goModule(db.id)
+  const v = c.renderVals()
+  const g = v.db.groups[0]
+  assert.ok(g.rows.length <= 60, 'first paint renders at most 60 rows, got ' + g.rows.length)
+  assert.match(g.padBottom, /^height: \d+px;$/)
+  assert.equal(g.rows[0].$key, c.tableGrid(db).rowIds[0])
+  // The keyboard grid still covers every row, so selection and paste work beyond the window.
+  assert.equal(c.tableGrid(db).rowIds.length, 300)
+  // Small tables are not windowed.
+  const small = c.ws.modules.find((m) => m.title === 'Projects')
+  c.goModule(small.id)
+  const v2 = c.renderVals()
+  assert.equal(v2.db.groups[0].rows.length, small.rows.length)
+  assert.equal(v2.db.groups[0].padBottom, '')
+})
+
+test('typing in a cell editor does not re-render the page on every keystroke', () => {
+  const { c, db } = rangeFixture()
+  const g = c.tableGrid(db)
+  const row = db.rows.find((r) => r.id === g.rowIds[0]), a = db.props.find((p) => p.id === g.colIds[1])
+  c.editCellAt(db, row, a, null)
+  const v = c.renderVals()
+  const cell = v.db.groups[0].rows[0].cells[1]
+  let bumps = 0
+  const bump = c.bump; c.bump = () => { bumps++ }
+  for (const ch of 'hello') cell.onDraft({ target: { value: (c.S.cellEdit.draft || '') + ch } })
+  c.bump = bump
+  assert.equal(bumps, 0)
+  assert.equal(c.S.cellEdit.draft, 'a1hello')
+})

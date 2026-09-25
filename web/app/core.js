@@ -24,7 +24,12 @@ class Component extends DCLogic {
     if (!this.ws.recent) this.ws.recent = [];
   }
 
-  componentDidMount() { this._mounted = true; if (this.remote) this.syncBoot(); }
+  componentDidMount() {
+    var self = this;
+    this._mounted = true;
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', function () { self.tableScrolled(); });
+    if (this.remote) this.syncBoot();
+  }
   componentWillUnmount() { this._mounted = false; clearTimeout(this._saveT); }
 
   /* ---------- persistence ---------- */
@@ -323,6 +328,7 @@ class Component extends DCLogic {
   /* ================= render ================= */
   renderVals() {
     var S = this.S, self = this, r = S.route, m = r.name === 'm' ? this.mod(r.id) : null;
+    this.tblWin = null; // set again by the table view when one is on screen
     if (S.loading || S.loadError) return this.loadingVals();
     if (r.name === 'm' && (!m || m.archivedAt)) { S.route = r = { name: 'home' }; m = null; }
     var isDb = !!(m && m.type === 'database'), isSheet = !!(m && m.type === 'sheet'), isNb = !!(m && m.type === 'notebook');
@@ -332,6 +338,7 @@ class Component extends DCLogic {
       onRootKey: function (e) { self.onRootKey(e); },
       onRootMove: function (e) { self.onRootPointerMove(e); },
       onRootUp: function (e) { self.onRootPointerUp(e); },
+      onMainScroll: function () { self.tableScrolled(); },
       sb: this.sidebarVals(),
       top: this.topVals(m, rowPage),
       isHome: r.name === 'home', isArchive: r.name === 'archive',
@@ -363,7 +370,7 @@ class Component extends DCLogic {
   loadingVals() {
     var self = this, S = this.S;
     return {
-      rootCls: 'app ' + (S.theme === 'dark' ? 'dark' : 'light') + ' app-loading', onRootKey: function () { }, onRootMove: function () { }, onRootUp: function () { },
+      rootCls: 'app ' + (S.theme === 'dark' ? 'dark' : 'light') + ' app-loading', onRootKey: function () { }, onRootMove: function () { }, onRootUp: function () { }, onMainScroll: function () { },
       sb: { groups: [], favs: [], hasFavs: false, isLight: S.theme !== 'dark', isDark: S.theme === 'dark', themeLabel: '', archivedCount: '' }, top: { crumbs: [{ label: 'Truss', cls: 'crumb last', go: function () { } }] },
       isHome: false, isArchive: false, isDb: false, isRowPage: false, isSheet: false, isNb: false, hasPeek: false, mainCls: 'main',
       menu: { open: false }, pop: { open: false }, modal: { open: false }, viewer: { open: false }, toasts: [], hasToasts: false,

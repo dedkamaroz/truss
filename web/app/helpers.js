@@ -64,8 +64,16 @@ function uniqueName(name, taken) { var t = {}; taken.forEach(function (x) { t[lc
 function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
 
 var SYD_PARTS_FMT = null;
+// Intl formatting is slow and tables call this for every date cell on every render, so results are cached:
+// by timestamp for stored dates, and for one second for "now".
+var SYD_PARTS_CACHE = new Map(), SYD_NOW = { at: 0, v: null };
 function sydParts(iso) {
-  var d = iso ? new Date(iso) : new Date();
+  if (!iso) { var t = Date.now(); if (!SYD_NOW.v || t - SYD_NOW.at > 1000) { SYD_NOW = { at: t, v: sydPartsOf(new Date(t)) }; } return SYD_NOW.v; }
+  var hit = SYD_PARTS_CACHE.get(iso);
+  if (!hit) { if (SYD_PARTS_CACHE.size > 5000) SYD_PARTS_CACHE.clear(); hit = sydPartsOf(new Date(iso)); SYD_PARTS_CACHE.set(iso, hit); }
+  return hit;
+}
+function sydPartsOf(d) {
   try {
     if (!SYD_PARTS_FMT) SYD_PARTS_FMT = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' });
     var o = {}; SYD_PARTS_FMT.formatToParts(d).forEach(function (p) { o[p.type] = p.value; });

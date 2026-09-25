@@ -167,11 +167,19 @@ var FE = (function () {
     var secs = Math.round(frac * 86400);
     return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), dow: d.getUTCDay(), h: Math.floor(secs / 3600), mi: Math.floor(secs / 60) % 60, s: secs % 60 };
   }
+  // One formatter, and one answer per second: TODAY()/NOW() and date cells ask for this constantly.
+  var NOW_FMT = null, NOW_CACHE = { at: 0, v: null };
   function sydneyNow() {
+    var t = Date.now();
+    if (NOW_CACHE.v && t - NOW_CACHE.at < 1000) return NOW_CACHE.v;
+    NOW_CACHE = { at: t, v: sydneyNowUncached(t) };
+    return NOW_CACHE.v;
+  }
+  function sydneyNowUncached(t) {
     var parts = {};
     try {
-      new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-        .formatToParts(new Date()).forEach(function (p) { parts[p.type] = p.value; });
+      if (!NOW_FMT) NOW_FMT = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+      NOW_FMT.formatToParts(new Date(t)).forEach(function (p) { parts[p.type] = p.value; });
     } catch (e) { var d = new Date(); parts = { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(), hour: d.getHours(), minute: d.getMinutes(), second: d.getSeconds() }; }
     var h = parseInt(parts.hour, 10) % 24;
     return { y: +parts.year, m: +parts.month, d: +parts.day, h: h, mi: +parts.minute, s: +parts.second };

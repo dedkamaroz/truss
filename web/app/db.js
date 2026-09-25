@@ -4,6 +4,7 @@ var CALC_LABEL = {}; CALC_FNS.forEach(function (c) { CALC_LABEL[c[0]] = c[1]; })
 var ROLLUP_FNS = [['count', 'Count related'], ['count_values', 'Count values'], ['count_unique', 'Count unique values'], ['percent_empty', 'Percent empty'], ['sum', 'Sum'], ['range', 'Range'], ['average', 'Average'], ['median', 'Median'], ['min', 'Min'], ['max', 'Max'], ['percent_checked', 'Percent true'], ['show', 'Show values'], ['earliest', 'Earliest date'], ['latest', 'Latest date']];
 var NUM_FORMATS = [['number', 'Number'], ['commas', 'Number with commas'], ['currency', 'Australian dollar'], ['percent', 'Percent']];
 var FORMULA_FORMATS = [['auto', 'Automatic'], ['number', 'Number (2 dp)'], ['currency', 'Australian dollar'], ['percent', 'Percent'], ['date', 'Date'], ['text', 'Text']];
+var TABLE_WINDOW_MIN = 80, TABLE_OVERSCAN = 20, TABLE_FIRST_PAINT = 60;
 var DEFAULT_W = { title: 280, text: 200, number: 120, select: 150, multi_select: 200, status: 150, date: 140, checkbox: 96, url: 200, email: 200, phone: 150, relation: 220, rollup: 130, formula: 150, lookup: 170, created_time: 190, last_edited_time: 190 };
 
 var DbMix = {
@@ -362,8 +363,9 @@ var DbMix = {
     var row = this.addRow(db, preset);
     var tp = this.titleProp(db);
     this.S.cellEdit = { dbId: db.id, rowId: row.id, propId: tp.id, draft: '', where: 'table' };
-    this.focusSel('[data-cellinput]', 'end');
     this.bump();
+    // In a large table the new row can be outside the rendered window: bring it into view first.
+    this.revealRow(db, row.id, function () { this.focusSel('[data-cellinput]', 'end'); });
     return row;
   },
   deleteRows: function (db, ids) {
@@ -630,7 +632,8 @@ var DbMix = {
     };
     if (editing) {
       c.draft = E.draft;
-      c.onDraft = function (e) { E.draft = e.target.value; self.bump(); };
+      // The input already shows what was typed; re-rendering the whole table per keystroke is what made typing lag.
+      c.onDraft = function (e) { E.draft = e.target.value; };
       c.onKey = function (e) {
         // In the table, leaving an edit keeps the cell selected with the table focused, so arrows,
         // typing and copy/paste carry on from there. Tab moves one cell across.
@@ -741,6 +744,58 @@ var DbMix = {
     return V;
   },
   presetFromView: function (db, view) { return {}; },
+  /* ---------- row windowing for large tables ---------- */
+  // Height of one table row, read from the page (36px by the stylesheet) so spacers match exactly.
+  tableRowPx: function () {
+    var el = typeof document !== 'undefined' && document.querySelector ? document.querySelector('.dbt-rows .dbt-row') : null;
+    var h = el && el.offsetHeight;
+    if (h && h > 10 && h < 200) this._rowPx = h;
+    return this._rowPx || 36;
+  },
+  // The slice of a group's rows to render: those in the main scroll area, plus TABLE_OVERSCAN either side.
+  tableWindow: function (gid, n, rowPx) {
+    var sc = typeof document !== 'undefined' && document.querySelector ? document.querySelector('[data-scroll="main"]') : null;
+    var el = sc && document.querySelector('[data-grp="' + gid.replace(/"/g, '') + '"]');
+    if (!sc || !el) { var self = this; this.later(function () { self.tableScrolled(); }, 0); return [0, Math.min(n, TABLE_FIRST_PAINT)]; }
+    var top = el.getBoundingClientRect().top, sr = sc.getBoundingClientRect();
+    var a = Math.floor((sr.top - top) / rowPx), b = Math.ceil((sr.bottom - top) / rowPx);
+    return [clamp(a - TABLE_OVERSCAN, 0, n), clamp(b + TABLE_OVERSCAN, 0, n)];
+  },
+  // Scrolls a row into view, rendering it first when it is outside the current window, then calls done.
+  revealRow: function (db, rowId, done) {
+    var self = this;
+    this.later(function () {
+      var el = document.querySelector('[data-ck^="' + rowId + '|"]');
+      if (el) { if (el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); if (done) done.call(self); return; }
+      var W = self.tblWin, sc = document.querySelector('[data-scroll="main"]');
+      if (!W || !sc) { if (done) done.call(self); return; }
+      Object.keys(W.groups).some(function (gid) {
+        var g = W.groups[gid], i = g.ids ? g.ids.indexOf(rowId) : -1, box = document.querySelector('[data-grp="' + gid.replace(/"/g, '') + '"]');
+        if (i < 0 || !box) return false;
+        var y = box.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop + i * W.rowPx;
+        sc.scrollTop = Math.max(0, y - sc.clientHeight / 2);
+        return true;
+      });
+      self.bump();
+      if (done) self.later(done, 0);
+    }, 0);
+  },
+  // Scroll/resize: re-render only when the rows in view get close to the edge of what is rendered.
+  tableScrolled: function () {
+    var W = this.tblWin; if (!W || !W.windowed || this._winPending) return;
+    var self = this;
+    this._winPending = true;
+    var run = function () {
+      self._winPending = false;
+      var W2 = self.tblWin; if (!W2 || !W2.windowed) return;
+      var need = Object.keys(W2.groups).some(function (gid) {
+        var g = W2.groups[gid], r = self.tableWindow(gid, g.n, W2.rowPx), margin = Math.floor(TABLE_OVERSCAN / 2);
+        return (r[0] + TABLE_OVERSCAN - margin < g.from && g.from > 0) || (r[1] - TABLE_OVERSCAN + margin > g.to && g.to < g.n);
+      });
+      if (need) self.bump();
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run); else setTimeout(run, 16);
+  },
   tableVals: function (db, view, rows, visible, sel) {
     var self = this, S = this.S;
     var cols = visible.map(function (p) {
@@ -761,6 +816,10 @@ var DbMix = {
     this.tblGrid[db.id] = { viewId: view.id, rowIds: flat, colIds: visible.map(function (p) { return p.id; }) };
     var R = this.selRange(db);
     cols.forEach(function (co, ci) { self.decorateHeader(co, db, visible[ci], ci, R); });
+    // Large tables render only the rows in (and near) view; spacers keep the scroll height. Every render
+    // otherwise rebuilds every cell, which is what made a big database sluggish.
+    var windowed = flat.length > TABLE_WINDOW_MIN, rowPx = this.tableRowPx(), win = { dbId: db.id, windowed: windowed, rowPx: rowPx, groups: {} };
+    this.tblWin = win;
     return {
       dbId: db.id,
       onKey: function (e) { self.tableKey(e, db); },
@@ -772,15 +831,24 @@ var DbMix = {
       addProp: function (e) { self.newPropMenu(e, db, null); },
       grouped: grouped,
       groups: groups.map(function (g) {
-        var ck = db.id + '|' + view.id + '|' + g.key, open = !collapsed[ck];
+        var ck = db.id + '|' + view.id + '|' + g.key, open = !collapsed[ck], wr = { from: 0, to: g.rows.length };
+        if (windowed && (open || !grouped)) {
+          var rg = self.tableWindow(ck, g.rows.length, rowPx);
+          wr = { from: rg[0], to: rg[1] };
+          win.groups[ck] = { from: wr.from, to: wr.to, n: g.rows.length, ids: g.rows.map(function (x) { return x.id; }) };
+        }
         return {
           label: g.label, count: g.rows.length, tagCls: 'tag c-' + (g.color || 'gray'), showHead: grouped, open: open || !grouped,
           chevCls: 'grp-chev' + (open ? ' open' : ''),
           toggle: function () { collapsed[ck] = open; self.bump(); },
           add: function () { var preset = {}; if (grouped && g.prop) { if (g.prop.type === 'multi_select') preset[g.prop.id] = g.value ? [g.value] : []; else if (g.prop.type === 'select' || g.prop.type === 'status' || g.prop.type === 'checkbox') preset[g.prop.id] = g.value; else if (g.prop.type === 'text' || g.prop.type === 'title') preset[g.prop.id] = g.value || ''; } self.newRowAndEdit(db, preset); },
-          rows: g.rows.map(function (row) {
+          gid: ck,
+          padTop: wr.from ? 'height: ' + (wr.from * rowPx) + 'px;' : '',
+          padBottom: wr.to < g.rows.length ? 'height: ' + ((g.rows.length - wr.to) * rowPx) + 'px;' : '',
+          rows: g.rows.slice(wr.from, wr.to).map(function (row) {
             var on = !!sel[row.id];
             return {
+              $key: row.id,
               cls: 'dbt-row' + (on ? ' selected' : '') + (S.peek && S.peek.rowId === row.id ? ' peeked' : ''),
               selected: on,
               toggleSel: function (e) { sel[row.id] = e.target.checked; self.bump(); },
