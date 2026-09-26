@@ -2,6 +2,8 @@ import fs from 'node:fs'
 import { httpError } from '../http.js'
 import { launch, MAX_UPLOAD_BYTES } from '../attachments.js'
 
+const MAX_THUMB_BYTES = 128 * 1024
+
 export default function register(router, ctx) {
   const { attachments } = ctx
 
@@ -63,6 +65,40 @@ export default function register(router, ctx) {
       return launch('explorer.exe', ['/select,', attachments.pathOf(params.id)])
     })
   }
+
+  // Thumbnails: small JPEGs the browser makes once per attachment and stores here for every later view.
+  router.get('/api/attachments/:id/thumb', ({ params, res }) => {
+    load(params.id)
+    const data = attachments.thumb(params.id)
+    if (!data) throw httpError(404, 'thumb_not_found', 'No thumbnail yet')
+    res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
+      'Content-Length': data.length,
+      'X-Content-Type-Options': 'nosniff',
+      // An attachment's content never changes, so neither does its thumbnail.
+      'Cache-Control': 'private, max-age=31536000, immutable',
+    })
+    res.end(data)
+    return undefined
+  })
+
+  router.put('/api/attachments/:id/thumb', async ({ params, req }) => {
+    load(params.id)
+    const chunks = []
+    let size = 0
+    for await (const chunk of req) {
+      size += chunk.length
+      if (size > MAX_THUMB_BYTES) throw httpError(413, 'payload_too_large', 'Thumbnail exceeds 128 KB')
+      chunks.push(chunk)
+    }
+    const data = Buffer.concat(chunks)
+    // JPEG only: it starts FF D8 FF and ends FF D9.
+    if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8 || data[2] !== 0xff || data[data.length - 2] !== 0xff || data[data.length - 1] !== 0xd9) {
+      throw httpError(400, 'invalid_thumb', 'Thumbnail must be a JPEG image')
+    }
+    attachments.setThumb(params.id, data)
+    return { ok: true, size: data.length }
+  })
 
   router.delete('/api/attachments/:id', ({ params }) => {
     load(params.id)

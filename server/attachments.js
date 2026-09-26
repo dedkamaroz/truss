@@ -55,7 +55,9 @@ export function createAttachments(db, dataDir) {
   const root = path.join(dataDir, 'attachments')
   const now = () => new Date().toISOString()
   const q = {
-    get: db.prepare('SELECT * FROM attachments WHERE id = ?'),
+    get: db.prepare('SELECT a.*, EXISTS (SELECT 1 FROM attachment_thumbs t WHERE t.attachment_id = a.id) AS has_thumb FROM attachments a WHERE a.id = ?'),
+    thumbGet: db.prepare('SELECT data FROM attachment_thumbs WHERE attachment_id = ?'),
+    thumbSet: db.prepare('INSERT INTO attachment_thumbs (attachment_id, data, created_at) VALUES (?, ?, ?) ON CONFLICT (attachment_id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at'),
     insert: db.prepare(`INSERT INTO attachments (id, module_id, page_id, filename, mime, size, source, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
     del: db.prepare('DELETE FROM attachments WHERE id = ?'),
@@ -127,12 +129,22 @@ export function createAttachments(db, dataDir) {
       const args = []
       if (moduleId) (where.push('module_id = ?'), args.push(moduleId))
       if (pageId) (where.push('page_id = ?'), args.push(pageId))
-      const sql = `SELECT * FROM attachments ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at, rowid`
+      const sql = `SELECT a.*, EXISTS (SELECT 1 FROM attachment_thumbs t WHERE t.attachment_id = a.id) AS has_thumb
+        FROM attachments a ${where.length ? 'WHERE ' + where.map((w) => 'a.' + w).join(' AND ') : ''} ORDER BY a.created_at, a.rowid`
       return db.prepare(sql).all(...args)
     },
 
     get(id) {
       return q.get.get(id) ?? null
+    },
+
+    // Preview image for an attachment: a JPEG made by the browser (the server has no image codecs).
+    thumb(id) {
+      const row = q.thumbGet.get(id)
+      return row ? row.data : null
+    },
+    setThumb(id, buffer) {
+      q.thumbSet.run(id, buffer, now())
     },
 
     pathOf(id) {

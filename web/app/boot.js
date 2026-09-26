@@ -71,6 +71,13 @@ var TRUSS_REMOTE = (function () {
       } catch (e) { throw fail(0, 'network', 'Could not reach the Truss server'); }
       return parse(res);
     },
+    // Sends a binary body with PUT (used for thumbnails).
+    putBlob: async function (path, blob) {
+      var res;
+      try { res = await fetch(resolve(path), { method: 'PUT', headers: headers({ 'Content-Type': blob.type || 'application/octet-stream' }), body: blob }); }
+      catch (e) { throw fail(0, 'network', 'Could not reach the Truss server'); }
+      return parse(res);
+    },
     url: function (p) { var u = resolve(p); return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token); }
   };
 })();

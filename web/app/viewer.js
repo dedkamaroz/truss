@@ -59,24 +59,79 @@ var TRUSS_PDF = (function () {
   return { base: base, render: render, info: info, thumb: function (url) { return render(url, 1, 160, 160, 'jpeg'); } };
 })();
 
+var THUMB_PX = 192, THUMB_CONCURRENCY = 2;
+function dataUrlToBlob(u) {
+  var i = u.indexOf(','), bin = atob(u.slice(i + 1)), n = bin.length, a = new Uint8Array(n);
+  for (var j = 0; j < n; j++) a[j] = bin.charCodeAt(j);
+  return new Blob([a], { type: (/^data:([^;,]+)/.exec(u) || [0, 'application/octet-stream'])[1] });
+}
+
 var VIEW_MAX_W = 1280, VIEW_MAX_H = 720, VIEW_HEAD = 48;
 
 var ViewerMix = {
   isPdf: function (id) { var a = this.attMeta && this.attMeta[id]; return !!(a && (/^application\/pdf/i.test(a.mime || '') || /\.pdf$/i.test(a.filename || ''))); },
   canPreview: function (id) { return this.isImage(id) || this.isPdf(id); },
   // Thumbnail source for an attachment: the image itself, or page 1 of a PDF once rendered ('' until then).
+  // Thumbnails are small JPEGs stored on the server. Drawing the full-size originals into 32px boxes was
+  // what made tables with a Files column slow: every visible photo was downloaded in full (megabytes each)
+  // and decoded at full resolution, again and again as rows were repainted. A thumbnail is made once, by
+  // whichever browser first shows the file (or uploads it), and every later view loads a few kilobytes.
   thumbSrc: function (id) {
-    var self = this;
-    if (!this.remote) return '';
-    if (this.isImage(id)) return this.attUrl(id);
-    if (!this.isPdf(id)) return '';
+    if (!this.remote || !this.canPreview(id)) return '';
     this.thumbs = this.thumbs || {};
-    var t = this.thumbs[id];
-    if (!t) {
-      t = this.thumbs[id] = { state: 'loading', src: '' };
-      TRUSS_PDF.thumb(this.attUrl(id)).then(function (r) { t.state = 'ok'; t.src = r.src; self.bump(); }, function () { t.state = 'err'; self.bump(); });
+    var t = this.thumbs[id], a = this.attMeta && this.attMeta[id];
+    if (t && t.src) return t.src;
+    if (a && a.has_thumb) return this.remote.url('/api/attachments/' + encodeURIComponent(id) + '/thumb');
+    if (!t) { this.thumbs[id] = { state: 'queued', src: '' }; this.queueThumb(id, null); }
+    return '';
+  },
+  // At most two thumbnails are made at a time, so a table full of new files stays responsive.
+  queueThumb: function (id, blob) {
+    var self = this;
+    this.thumbQ = this.thumbQ || [];
+    this.thumbQ.push({ id: id, blob: blob });
+    this.thumbRunning = this.thumbRunning || 0;
+    function next() {
+      if (self.thumbRunning >= THUMB_CONCURRENCY || !self.thumbQ.length) return;
+      var job = self.thumbQ.shift(), t = self.thumbs[job.id] || (self.thumbs[job.id] = { state: 'queued', src: '' });
+      self.thumbRunning++;
+      t.state = 'making';
+      self.makeThumb(job.id, job.blob).then(function (dataUrl) {
+        t.state = 'ok'; t.src = dataUrl;
+        var a = self.attMeta && self.attMeta[job.id];
+        return self.remote.putBlob('/api/attachments/' + encodeURIComponent(job.id) + '/thumb', dataUrlToBlob(dataUrl)).then(function () { if (a) a.has_thumb = 1; }, function () { /* shown locally; another view will store it */ });
+      }).catch(function () { t.state = 'err'; }).then(function () {
+        self.thumbRunning--;
+        self.bumpSoon();
+        next();
+      });
+      next();
     }
-    return t.src;
+    next();
+  },
+  // Renders a JPEG data URL no larger than THUMB_PX on its longer side: from the given Blob (a file
+  // just uploaded), else from the stored file (images decode off the main thread; PDFs use page 1).
+  makeThumb: function (id, blob) {
+    var self = this;
+    if (this.isPdf(id)) return TRUSS_PDF.render(this.attUrl(id), 1, THUMB_PX, THUMB_PX, 'jpeg').then(function (r) { return r.src; });
+    var src = blob ? Promise.resolve(blob) : fetch(this.attUrl(id), { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.blob(); });
+    return src.then(function (b) { return createImageBitmap(b); }).then(function (bmp) {
+      var k = Math.min(1, THUMB_PX / Math.max(bmp.width, bmp.height)), w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      var ctx = c.getContext('2d'); ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(bmp, 0, 0, w, h);
+      if (bmp.close) bmp.close();
+      var out = c.toDataURL('image/jpeg', 0.82);
+      c.width = c.height = 0;
+      return out;
+    });
+  },
+  // Re-renders at most every 150 ms while thumbnails arrive, rather than once per thumbnail.
+  bumpSoon: function () {
+    var self = this;
+    if (this._bumpSoonT) return;
+    this._bumpSoonT = setTimeout(function () { self._bumpSoonT = null; self.bump(); }, 150);
   },
   // Values for the thumbnails of a files cell; files that cannot be previewed stay as name tags.
   fileThumbs: function (ids, where) {

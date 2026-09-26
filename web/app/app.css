@@ -637,7 +637,7 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;line-height:1.45}
 
 /* ---- attachment thumbnails and viewer ---- */
 .thumbs{display:flex;gap:4px;align-items:center;flex:none;min-width:0}
-.thumb{height:26px;width:34px;flex:none;border-radius:4px;overflow:hidden;border:1px solid var(--line2);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:zoom-in}
+.thumb{height:24px;width:32px;flex:none;border-radius:4px;overflow:hidden;border:1px solid var(--line2);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:zoom-in}
 .thumb.big{height:56px;width:72px;border-radius:6px}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb.pdf img{object-fit:cover;object-position:top}

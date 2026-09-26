@@ -259,6 +259,8 @@ var SyncMix = {
         this.attMeta = this.attMeta || {};
         this.attMeta[row.id] = row;
         out.push(row);
+        // Make the thumbnail from the file in hand, so nobody has to download it again just to preview it.
+        if (/^image\//.test(row.mime || '') && typeof this.queueThumb === 'function') { this.thumbs = this.thumbs || {}; this.thumbs[row.id] = { state: 'queued', src: '' }; this.queueThumb(row.id, files[i]); }
       } catch (e) {
         this.toast('Upload failed: ' + (e.message || 'error'), 'error');
       }

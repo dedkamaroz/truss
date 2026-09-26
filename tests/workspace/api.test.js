@@ -120,3 +120,31 @@ test('changes since a rev, and the event stream, report other clients\' writes',
     assert.deepEqual(ch.json.changes.map((c) => c.version), [2])
   })
 })
+
+test('attachment thumbnails: stored once as JPEG, listed, served cacheably, removed with the file', async () => {
+  await withServer(async ({ call }) => {
+    await call('POST', '/api/v2/sync', { json: { client: 'a', puts: [{ module: mod('m9', 'database', { props: [], rows: [], views: [] }), baseVersion: 0 }] } })
+    const up = await call('POST', '/api/attachments?moduleId=m9', { headers: { 'X-Filename': 'photo.jpg', 'Content-Type': 'image/jpeg' }, body: Buffer.alloc(5000, 7) })
+    assert.equal(up.status, 201, up.text)
+    const id = up.json.id
+    assert.equal(up.json.has_thumb, 0)
+    assert.equal((await call('GET', `/api/attachments/${id}/thumb`)).status, 404)
+    // Only JPEG bytes are accepted, and only small ones.
+    assert.equal((await call('PUT', `/api/attachments/${id}/thumb`, { headers: { 'Content-Type': 'image/jpeg' }, body: Buffer.from('<svg/>') })).status, 400)
+    const big = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(200 * 1024), Buffer.from([0xff, 0xd9])])
+    assert.equal((await call('PUT', `/api/attachments/${id}/thumb`, { headers: { 'Content-Type': 'image/jpeg' }, body: big })).status, 413)
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(600, 1), Buffer.from([0xff, 0xd9])])
+    const put = await call('PUT', `/api/attachments/${id}/thumb`, { headers: { 'Content-Type': 'image/jpeg' }, body: jpeg })
+    assert.equal(put.status, 200, put.text)
+    const list = await call('GET', '/api/attachments?moduleId=m9')
+    assert.equal(list.json[0].has_thumb, 1)
+    assert.equal(list.json[0].data, undefined)
+    const got = await call('GET', `/api/attachments/${id}/thumb`)
+    assert.equal(got.status, 200)
+    assert.equal(got.headers['content-type'], 'image/jpeg')
+    assert.match(got.headers['cache-control'], /max-age=31536000/)
+    assert.deepEqual(got.body, jpeg)
+    assert.equal((await call('DELETE', `/api/attachments/${id}`)).status, 200)
+    assert.equal((await call('GET', `/api/attachments/${id}/thumb`)).status, 404)
+  })
+})

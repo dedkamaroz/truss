@@ -287,6 +287,17 @@ test('image and PDF files show thumbnails and open in the viewer with pages and 
   await page.keyboard.press('Escape')
   await expect(page.locator('.vw-back')).toHaveCount(0)
   expect(problems.filter((p) => !/favicon/.test(p))).toEqual([])
+  // The thumbnails were stored on the server: a fresh load shows them without fetching either original.
+  await waitSaved(page)
+  const originals = []
+  page.on('request', (r) => { if (/\/api\/attachments\/[^/]+\/content/.test(r.url())) originals.push(r.url()) })
+  await page.reload()
+  await expect(page.locator('#app')).not.toHaveClass(/app-booting/)
+  await page.locator('.sb').getByText('Previews').click()
+  await expect(page.locator('.dbt-row .thumb img')).toHaveCount(2, { timeout: 15000 })
+  for (const img of await page.locator('.dbt-row .thumb img').all()) await expect(img).toHaveAttribute('src', /\/api\/attachments\/[^/]+\/thumb\?/)
+  await expect.poll(() => page.locator('.dbt-row .thumb img').first().evaluate((el) => el.naturalWidth)).toBeGreaterThan(0)
+  expect(originals).toEqual([])
 })
 
 test('Excel-style entry: type, Tab to the next cell (wrapping rows), Enter, and arrows after typing', async ({ page }) => {

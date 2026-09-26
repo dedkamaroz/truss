@@ -365,13 +365,15 @@ test('file thumbnails: images and PDFs preview, other files stay as tags', () =>
   c.remote = { url: (p) => p, get: async () => [] }
   c.attLoaded = {}
   c.attMeta = {
-    i1: { id: 'i1', filename: 'id.png', mime: 'image/png', size: 10 },
+    i1: { id: 'i1', filename: 'id.png', mime: 'image/png', size: 10, has_thumb: 1 },
     p1: { id: 'p1', filename: 'statement.pdf', mime: 'application/pdf', size: 10 },
     d1: { id: 'd1', filename: 'notes.docx', mime: 'application/octet-stream', size: 10 },
   }
   c.thumbs = { p1: { state: 'ok', src: 'data:image/jpeg;base64,xx' } }
   const t = c.fileThumbs(['i1', 'p1', 'd1'], 'table')
   deq(t.thumbs.map((x) => [x.name, x.hasSrc, x.cls]), [['id.png', true, 'thumb'], ['statement.pdf', true, 'thumb pdf']])
+  // A stored thumbnail is used, never the original file.
+  assert.equal(t.thumbs[0].src, '/api/attachments/i1/thumb')
   deq(t.tags.map((x) => x.text), ['notes.docx'])
   t.thumbs[1].open()
   assert.equal(c.S.viewer.i, 1)
@@ -478,4 +480,27 @@ test('typing in a cell editor does not re-render the page on every keystroke', (
   c.bump = bump
   assert.equal(bumps, 0)
   assert.equal(c.S.cellEdit.draft, 'a1hello')
+})
+
+test('thumbnails are made once, two at a time, stored on the server, and never use the original', async () => {
+  const { Component } = loadApp()
+  const c = new Component({})
+  const puts = []
+  c.remote = { url: (p) => p, get: async () => [], putBlob: async (p, b) => { puts.push([p, b.type, b.size]); return { ok: true } } }
+  c.attLoaded = {}
+  c.attMeta = {}
+  for (let i = 0; i < 5; i++) c.attMeta['p' + i] = { id: 'p' + i, filename: 'photo' + i + '.jpg', mime: 'image/jpeg', size: 5e6 }
+  let running = 0, peak = 0, made = 0
+  const release = []
+  c.makeThumb = (id) => { running++; peak = Math.max(peak, running); made++; return new Promise((res) => release.push(() => { running--; res('data:image/jpeg;base64,/9j/2Q==') })) }
+  const ids = Object.keys(c.attMeta)
+  for (const id of ids) assert.equal(c.thumbSrc(id), '')          // nothing to show until made
+  for (const id of ids) c.thumbSrc(id)                              // asking again does not queue again
+  assert.equal(peak, 2)
+  while (release.length) { release.shift()(); await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0)) }
+  assert.equal(made, 5)
+  assert.equal(puts.length, 5)
+  assert.match(puts[0][0], /^\/api\/attachments\/p\d\/thumb$/)
+  assert.equal(puts[0][1], 'image/jpeg')
+  for (const id of ids) { assert.match(c.thumbSrc(id), /^data:image\/jpeg/); assert.equal(c.attMeta[id].has_thumb, 1) }
 })

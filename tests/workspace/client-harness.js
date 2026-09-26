@@ -36,7 +36,7 @@ export function loadApp({ meta = {} } = {}) {
   }
   const ctx = vm.createContext({
     window, document, localStorage, console, URL, setTimeout, clearTimeout, setInterval, clearInterval,
-    queueMicrotask, Promise, Map, Set, JSON, Math, Date, Intl, location: { href: 'http://127.0.0.1/', reload() {} },
+    queueMicrotask, Promise, Map, Set, JSON, Math, Date, Intl, Blob, atob, btoa, Uint8Array, location: { href: 'http://127.0.0.1/', reload() {} },
     navigator: { platform: 'Win32', clipboard: null }, requestAnimationFrame: (f) => setTimeout(f, 0),
     fetch: () => Promise.reject(new Error('no network in tests')),
   })
