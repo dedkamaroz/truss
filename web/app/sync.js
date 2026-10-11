@@ -65,9 +65,13 @@ var SyncMix = {
     catch (e) { S.loading = false; S.loadError = e.message || 'Could not load the workspace'; this.bump(); return; }
     this.base = {}; this.ver = {};
     this.ws.modules = w.modules.map(function (x) { normModule(x.module); self.base[x.module.id] = JSON.stringify(x.module); self.ver[x.module.id] = x.version; return x.module; });
+    // Hidden modules (admin-only titles) stay in ws.modules ON PURPOSE: relation,
+    // lookup, rollup and list columns in visible databases compute from them.
+    // The id set keeps them out of every listing and route instead.
+    this.hiddenIds = new Set(w.modules.filter(function (x) { return x.hidden; }).map(function (x) { return x.module.id; }));
     this.rev = w.rev || 0;
     S.loading = false; S.sync = 'saved';
-    if (S.route.name === 'm' && !this.mod(S.route.id)) S.route = { name: 'home' };
+    if (S.route.name === 'm' && (!this.mod(S.route.id) || this.hiddenIds.has(S.route.id))) S.route = { name: 'home' };
     this.calc = new Map();
     this.bump();
     if (w.migration && w.migration.length) this.modal('text', { title: 'Imported from the previous Truss', text: 'Your existing databases, workbooks and notebooks were converted. A few things could not be carried over exactly:\n\n- ' + w.migration.join('\n- ') + '\n\nThe original tables are untouched on the server.', what: 'Notes' });
@@ -193,6 +197,10 @@ var SyncMix = {
     if (this.syncing) { this._fetchQ[id] = setTimeout(function () { self.fetchRemote(id); }, 300); return; }
     try { r = await this.remote.get('/api/v2/modules/' + encodeURIComponent(id)); }
     catch (e) { if (e.status !== 404) return; r = null; }
+    // A 404 for a module we hold and have hidden means the server refused it
+    // (it became hidden, or we are a non-admin): keep our copy, the lookups
+    // in visible databases still need it.
+    if (!r && this.hiddenIds && this.hiddenIds.has(id)) return;
     if (this.syncing) { this._fetchQ[id] = setTimeout(function () { self.fetchRemote(id); }, 300); return; }
     var i = idxById(this.ws.modules, id), local = i >= 0 ? this.ws.modules[i] : null, baseJ = this.base[id];
     var pending = !!local && baseJ !== JSON.stringify(local);

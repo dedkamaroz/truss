@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { httpError } from '../http.js'
 import { transaction, MODULE_TYPES } from '../db.js'
+import { hiddenTitle, isAdmin } from '../access.js'
 
 // An emoji (ZWJ sequences included) or an icon name; long text would break the sidebar and header layout.
 export const MAX_ICON = 32
@@ -48,18 +49,28 @@ export default function register(router, ctx) {
     return row
   }
 
+  // The admin/non-admin split for the hidden-database feature. Non-admins are
+  // refused everything that would reveal or change a hidden module; the same
+  // 404 a missing module gets hides its existence.
+  const denyHidden = (req, row) => {
+    if (!isAdmin(req, ctx.hosted) && hiddenTitle(row?.title)) throw httpError(404, 'module_not_found', 'Module not found')
+  }
+
   router.get('/api/templates', () =>
     [...ctx.templates.values()].map(({ type, key, name, description }) => ({ type, key, name, description })))
 
-  router.get('/api/modules', ({ query }) =>
-    (query.archived === '1' ? q.listArchived : q.listActive).all().map(rowToModule))
+  router.get('/api/modules', ({ req, query }) =>
+    (query.archived === '1' ? q.listArchived : q.listActive).all()
+      .filter((row) => isAdmin(req, ctx.hosted) || !hiddenTitle(row.title))
+      .map(rowToModule))
 
-  router.post('/api/modules', ({ body, res }) => {
+  router.post('/api/modules', ({ req, body, res }) => {
     const { type, template = 'blank', title, icon } = body ?? {}
     if (!MODULE_TYPES.includes(type)) throw httpError(400, 'invalid_type', `type must be one of ${MODULE_TYPES.join(', ')}`)
     const tpl = ctx.templates.get(`${type}:${template}`)
     if (!tpl) throw httpError(400, 'unknown_template', `No "${template}" template for ${type}`)
     if (title != null && (typeof title !== 'string' || title.length > MAX_TITLE)) throw httpError(400, 'invalid_title', `title must be a string of at most ${MAX_TITLE} characters`)
+    if (!isAdmin(req, ctx.hosted) && hiddenTitle(title)) throw httpError(403, 'hidden_module', 'You do not have access to this module')
     if (icon != null && (typeof icon !== 'string' || icon.length > MAX_ICON)) throw httpError(400, 'invalid_icon', `icon must be a string of at most ${MAX_ICON} characters`)
 
     const id = crypto.randomUUID()
@@ -73,11 +84,19 @@ export default function register(router, ctx) {
     return created
   })
 
-  router.get('/api/modules/:id', ({ params }) => rowToModule(load(params.id)))
+  router.get('/api/modules/:id', ({ req, params }) => {
+    const row = load(params.id)
+    denyHidden(req, row)
+    return rowToModule(row)
+  })
 
-  router.patch('/api/modules/:id', ({ params, body }) => transaction(db, () => {
+  router.patch('/api/modules/:id', ({ req, params, body }) => transaction(db, () => {
     const current = load(params.id)
+    denyHidden(req, current)
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw httpError(400, 'invalid_body', 'JSON object body required')
+    // A rename is the one way an existing module can become hidden, so the new
+    // title is checked too.
+    if (!isAdmin(req, ctx.hosted) && 'title' in body && hiddenTitle(body.title)) throw httpError(403, 'hidden_module', 'You do not have access to this module')
     const sets = []
     const args = []
     if ('title' in body) {
@@ -105,21 +124,22 @@ export default function register(router, ctx) {
     return rowToModule(q.get.get(params.id))
   }))
 
-  router.post('/api/modules/:id/archive', ({ params }) => {
+  router.post('/api/modules/:id/archive', ({ req, params }) => {
     const row = load(params.id)
+    denyHidden(req, row)
     const now = new Date().toISOString()
     q.archive.run(row.archived_at || now, now, params.id)
     return rowToModule(q.get.get(params.id))
   })
 
-  router.post('/api/modules/:id/restore', ({ params }) => {
-    load(params.id)
+  router.post('/api/modules/:id/restore', ({ req, params }) => {
+    denyHidden(req, load(params.id))
     q.archive.run(null, new Date().toISOString(), params.id)
     return rowToModule(q.get.get(params.id))
   })
 
-  router.delete('/api/modules/:id', ({ params }) => {
-    load(params.id)
+  router.delete('/api/modules/:id', ({ req, params }) => {
+    denyHidden(req, load(params.id))
     const ids = q.attachmentIds.all(params.id).map((r) => r.id)
     transaction(db, () => {
       for (const fn of ctx.moduleDeleteHooks) fn(params.id)

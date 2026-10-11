@@ -85,8 +85,12 @@ class Component extends DCLogic {
 
   /* ---------- modules ---------- */
   mod(id) { return byId(this.ws.modules, id); }
+  // Hidden modules (admin-only titles) are held for referenced data but must
+  // not appear in any listing; local (non-server) workspaces have no hiddenIds.
+  isHidden(id) { return !!(this.hiddenIds && this.hiddenIds.has(id)); }
   mods(type) {
-    return this.ws.modules.filter(function (m) { return !m.archivedAt && (!type || m.type === type); })
+    var hidden = this.hiddenIds;
+    return this.ws.modules.filter(function (m) { return !m.archivedAt && !(hidden && hidden.has(m.id)) && (!type || m.type === type); })
       .sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0) || (a.createdAt < b.createdAt ? -1 : 1); });
   }
   uniqueTitle(title, except) { return uniqueName(title, this.ws.modules.filter(function (m) { return m !== except; }).map(function (m) { return m.title; })); }
@@ -160,7 +164,7 @@ class Component extends DCLogic {
     this.later(function () { var el = document.querySelector('[data-scroll="main"]'); if (el) el.scrollTop = 0; });
   }
   goModule(id, pageId, rowId) {
-    var m = this.mod(id); if (!m) return;
+    var m = this.mod(id); if (!m || this.isHidden(id)) return;
     if (pageId === '__none') { this.go({ name: 'm', id: id, pageId: null, rowId: null, overview: true }); return; }
     if (m.type === 'notebook' && !pageId && !rowId) {
       var first = m.lastPageId && byId(m.pages, m.lastPageId);
@@ -305,15 +309,20 @@ class Component extends DCLogic {
   }
 
   /* ---------- workspace export / import ---------- */
-  resetDemo() { var recent = this.ws.recent; this.ws = seedWorkspace(); if (this.remote) this.ws.recent = recent; this.S.route = { name: 'home' }; this.S.modal = null; this.S.peek = null; this.changed(null); this.toast('Demo workspace restored', 'success'); }
-  clearAll() { this.ws = { version: 1, modules: [], recent: this.remote ? this.ws.recent : [] }; this.S.route = { name: 'home' }; this.S.modal = null; this.S.peek = null; this.changed(null); this.toast('Workspace cleared', 'info'); }
+  // Hidden modules ride through every workspace replacement: they are not the
+  // caller's to remove, and a sync delete of one would be refused outright.
+  hiddenModules() { var self = this; return this.ws.modules.filter(function (m) { return self.isHidden(m.id); }); }
+  resetDemo() { var recent = this.ws.recent, keep = this.hiddenModules(); this.ws = seedWorkspace(); this.ws.modules = this.ws.modules.concat(keep); if (this.remote) this.ws.recent = recent; this.S.route = { name: 'home' }; this.S.modal = null; this.S.peek = null; this.changed(null); this.toast('Demo workspace restored', 'success'); }
+  clearAll() { var keep = this.hiddenModules(); this.ws = { version: 1, modules: keep, recent: this.remote ? this.ws.recent : [] }; this.S.route = { name: 'home' }; this.S.modal = null; this.S.peek = null; this.changed(null); this.toast('Workspace cleared', 'info'); }
   importWorkspace(text) {
     try {
       var ws = JSON.parse(text);
       if (!ws || !Array.isArray(ws.modules)) throw new Error('No modules array');
       ws.modules.forEach(function (m) { if (!m.id || !m.type) throw new Error('Module without id or type'); });
       if (this.remote) ws.recent = this.ws.recent;
+      var keep = this.hiddenModules();
       this.ws = ws; if (!ws.recent) ws.recent = [];
+      this.ws.modules = ws.modules.concat(keep);
       this.S.route = { name: 'home' }; this.S.modal = null;
       this.changed(null); this.toast('Workspace imported', 'success');
     } catch (e) { this.toast('Import failed: ' + e.message, 'error'); }
@@ -424,7 +433,7 @@ class Component extends DCLogic {
       isDark: S.theme === 'dark', isLight: S.theme !== 'dark',
       themeLabel: S.theme === 'dark' ? 'Light theme' : 'Dark theme',
       collapse: function () { self.toggleSidebar(); },
-      archivedCount: this.ws.modules.filter(function (m) { return m.archivedAt; }).length + this.ws.modules.reduce(function (a, m) { return a + (m.type === 'notebook' ? m.pages.filter(function (p) { return p.archivedAt; }).length : 0); }, 0),
+      archivedCount: this.ws.modules.filter(function (m) { return m.archivedAt && !(self.hiddenIds && self.hiddenIds.has(m.id)); }).length + this.ws.modules.reduce(function (a, m) { return a + (m.type === 'notebook' ? m.pages.filter(function (p) { return p.archivedAt; }).length : 0); }, 0),
       storageOff: S.storage === 'off'
     };
   }
@@ -512,7 +521,8 @@ class Component extends DCLogic {
   /* ---------- archive ---------- */
   archiveVals() {
     var self = this;
-    var mods = this.ws.modules.filter(function (m) { return m.archivedAt; }).map(function (m) {
+    var hidden = this.hiddenIds;
+    var mods = this.ws.modules.filter(function (m) { return m.archivedAt && !(hidden && hidden.has(m.id)); }).map(function (m) {
       return { title: m.title || 'Untitled', sub: TYPE_LABEL[m.type] + ' - archived ' + relTime(m.archivedAt), tile: 'tile tile-' + m.color, isDb: m.type === 'database', isSheet: m.type === 'sheet', isNb: m.type === 'notebook', isPage: false,
         restore: function () { self.restoreModule(m); },
         del: function () { self.confirm({ title: 'Delete "' + m.title + '" permanently?', message: 'This cannot be undone.', label: 'Delete', danger: true }, function () { self.deleteModule(m); }); } };
@@ -534,7 +544,9 @@ class Component extends DCLogic {
       items: items, hasItems: items.length > 0, isEmpty: items.length === 0,
       emptyAll: function () {
         self.confirm({ title: 'Empty the archive?', message: plural(items.length, 'item') + ' will be deleted permanently.', label: 'Empty archive', danger: true }, function () {
-          self.ws.modules.filter(function (m) { return m.archivedAt; }).forEach(function (m) { self.deleteModule(m); });
+          // Only the listed items: hidden archived modules are not in items,
+          // and the server would refuse a non-admin's delete of them anyway.
+          self.ws.modules.filter(function (m) { return m.archivedAt && !(hidden && hidden.has(m.id)); }).forEach(function (m) { self.deleteModule(m); });
           self.ws.modules.forEach(function (m) { if (m.type === 'notebook') m.pages.filter(function (p) { return p.archivedAt; }).forEach(function (p) { if (byId(m.pages, p.id)) self.deletePage(m, p, true); }); });
           self.changed(null); self.toast('Archive emptied', 'info');
         });
@@ -619,7 +631,7 @@ class Component extends DCLogic {
     } else if (M.kind === 'settings') {
       v.storageLine = this.S.storage === 'server' ? 'Saved on the Truss server as you work. Everyone with access sees the same workspace, and changes from others appear live.' : this.S.storage === 'off' ? 'Browser storage is not available here, so changes last until this page is reloaded. Use Export to keep a copy.' : 'Changes are saved automatically in this browser.';
       v.storageCls = 'note' + (this.S.storage === 'off' ? ' warn' : '');
-      v.exportWs = function () { self.modal('text', { title: 'Workspace JSON', text: JSON.stringify(self.ws, null, 1), what: 'Workspace JSON' }); };
+      v.exportWs = function () { var slim = Object.assign({}, self.ws, { modules: self.ws.modules.filter(function (m) { return !self.isHidden(m.id); }) }); self.modal('text', { title: 'Workspace JSON', text: JSON.stringify(slim, null, 1), what: 'Workspace JSON' }); };
       v.importText = M.importText;
       v.onImport = function (e) { M.importText = e.target.value; self.bump(); };
       v.doImport = function () { self.confirm({ title: 'Replace this workspace?', message: 'Everything here is replaced by the imported JSON.', label: 'Replace', danger: true }, function () { self.importWorkspace(M.importText); }); };

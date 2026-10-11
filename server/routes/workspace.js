@@ -12,6 +12,7 @@
 import { httpError } from '../http.js'
 import { transaction, MODULE_TYPES } from '../db.js'
 import { convertModule } from '../legacy.js'
+import { hiddenTitle, isAdmin } from '../access.js'
 
 const MAX_TITLE = 500
 const ID = /^[A-Za-z0-9_-]{1,80}$/
@@ -24,7 +25,7 @@ export default function register(router, ctx) {
   const q = {
     all: db.prepare('SELECT id, type, title, doc, version FROM modules ORDER BY sort_order, created_at'),
     legacy: db.prepare('SELECT * FROM modules WHERE doc IS NULL'),
-    get: db.prepare('SELECT id, type, doc, version FROM modules WHERE id = ?'),
+    get: db.prepare('SELECT id, title, type, doc, version FROM modules WHERE id = ?'),
     setDoc: db.prepare('UPDATE modules SET doc = ?, version = ? WHERE id = ?'),
     insert: db.prepare(`INSERT INTO modules (id, type, title, icon, sort_order, data, archived_at, created_at, updated_at, doc, version)
       VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?)`),
@@ -35,6 +36,8 @@ export default function register(router, ctx) {
     log: db.prepare('INSERT INTO workspace_log (module_id, version, deleted, client, at) VALUES (?, ?, ?, ?, ?)'),
     rev: db.prepare('SELECT COALESCE(MAX(rev), 0) AS rev FROM workspace_log'),
     since: db.prepare('SELECT rev, module_id AS id, version, deleted, client FROM workspace_log WHERE rev > ? ORDER BY rev LIMIT 5000'),
+    // Titles of the modules a batch of changes touches, so hidden ones can be dropped for non-admins.
+    titlesOf: db.prepare('SELECT id, title FROM modules WHERE id IN (SELECT value FROM json_each(?))'),
     trim: db.prepare('DELETE FROM workspace_log WHERE rev <= ?'),
   }
   const now = () => new Date().toISOString()
@@ -58,12 +61,23 @@ export default function register(router, ctx) {
   }
   convertLegacy()
 
-  const out = (row) => ({ version: row.version, module: JSON.parse(row.doc) })
+  const out = (row, hidden) => ({ version: row.version, module: JSON.parse(row.doc), ...(hidden ? { hidden: true } : {}) })
+
+  // The ids in a change batch whose CURRENT title is hidden. Renames settle on
+  // the next reload: a non-admin keeps the last doc they saw, visible or not.
+  function hiddenChangeIds(changes) {
+    const ids = [...new Set(changes.map((c) => c.id))]
+    if (!ids.length) return new Set()
+    return new Set(q.titlesOf.all(JSON.stringify(ids)).filter((r) => hiddenTitle(r.title)).map((r) => r.id))
+  }
 
   function broadcast(changes) {
     if (!changes.length || !clients.size) return
-    const payload = changes.map((c) => `id: ${c.rev}\ndata: ${JSON.stringify(c)}\n\n`).join('')
-    for (const res of clients) res.write(payload)
+    const hidden = hiddenChangeIds(changes)
+    const lines = (list) => list.map((c) => `id: ${c.rev}\ndata: ${JSON.stringify(c)}\n\n`).join('')
+    const full = lines(changes)
+    const filtered = hidden.size ? lines(changes.filter((c) => !hidden.has(c.id))) : full
+    for (const res of clients) res.write(res.admin ? full : filtered)
   }
 
   function checkModule(m) {
@@ -73,18 +87,20 @@ export default function register(router, ctx) {
     if (typeof m.title !== 'string' || m.title.length > MAX_TITLE) throw httpError(400, 'invalid_module', `module.title must be text of at most ${MAX_TITLE} characters`)
   }
 
-  router.get('/api/v2/workspace', () => {
+  router.get('/api/v2/workspace', ({ req }) => {
     const migration = convertLegacy()
-    return { rev: currentRev(), modules: q.all.all().map(out), migration }
+    const admin = isAdmin(req, ctx.hosted)
+    return { rev: currentRev(), modules: q.all.all().map((row) => out(row, !admin && hiddenTitle(row.title))), migration }
   })
 
-  router.get('/api/v2/modules/:id', ({ params }) => {
+  router.get('/api/v2/modules/:id', ({ req, params }) => {
     const row = q.get.get(params.id)
-    if (!row || row.doc == null) throw httpError(404, 'module_not_found', 'Module not found')
+    // Same 404 a missing module gets: existence of a hidden module is not disclosed.
+    if (!row || row.doc == null || (!isAdmin(req, ctx.hosted) && hiddenTitle(row.title))) throw httpError(404, 'module_not_found', 'Module not found')
     return out(row)
   })
 
-  router.post('/api/v2/sync', ({ body, res }) => {
+  router.post('/api/v2/sync', ({ req, body, res }) => {
     if (!body || typeof body !== 'object') throw httpError(400, 'invalid_body', 'JSON object body required')
     const puts = Array.isArray(body.puts) ? body.puts : []
     const deletes = Array.isArray(body.deletes) ? body.deletes : []
@@ -106,16 +122,22 @@ export default function register(router, ctx) {
 
     const ts = now()
     const removedAttachments = []
+    const admin = isAdmin(req, ctx.hosted)
     const result = transaction(db, () => {
       const conflicts = []
       for (const p of puts) {
         const row = q.get.get(p.module.id)
+        // Checked before the version logic: authorisation wins over a 409, and
+        // a non-admin must not be able to create, edit or delete a hidden
+        // module (or take or hold its title) even with a stale baseVersion.
+        if (!admin && (hiddenTitle(p.module.title) || (row && hiddenTitle(row.title)))) throw httpError(403, 'hidden_module', 'You do not have access to this module')
         const version = row ? row.version : 0
         if (row && row.type !== p.module.type) throw httpError(400, 'type_change', 'A module cannot change type')
         if (version !== p.baseVersion) conflicts.push(row ? { id: row.id, version, module: row.doc ? JSON.parse(row.doc) : null } : { id: p.module.id, version: 0, module: null })
       }
       for (const d of deletes) {
         const row = q.get.get(d.id)
+        if (row && !admin && hiddenTitle(row.title)) throw httpError(403, 'hidden_module', 'You do not have access to this module')
         if (row && row.version !== d.baseVersion) conflicts.push({ id: row.id, version: row.version, module: row.doc ? JSON.parse(row.doc) : null })
       }
       if (conflicts.length) return { conflicts }
@@ -156,9 +178,12 @@ export default function register(router, ctx) {
     return { rev, versions: result.versions }
   })
 
-  router.get('/api/v2/changes', ({ query }) => {
+  router.get('/api/v2/changes', ({ req, query }) => {
     const since = Number(query.since) || 0
-    return { rev: currentRev(), changes: q.since.all(since) }
+    const changes = q.since.all(since)
+    // Without this a non-admin's client would fetch (and 404 on, then drop)
+    // every hidden module that changed, losing the data its lookups reference.
+    return { rev: currentRev(), changes: isAdmin(req, ctx.hosted) ? changes : changes.filter((c) => !hiddenChangeIds(changes).has(c.id)) }
   })
 
   router.get('/api/v2/events', ({ req, res, query }) => {
@@ -172,9 +197,14 @@ export default function register(router, ctx) {
     res.write('retry: 3000\n\n')
     // On reconnect EventSource sends Last-Event-ID, which is newer than the since= it first opened with.
     const since = Number(req.headers['last-event-id'] ?? query.since) || 0
+    // Tagged for broadcast(): non-admin clients must not receive changes to
+    // hidden modules, or their clients would fetch and drop them. Set before
+    // the backlog write below so the same filter applies to it.
+    res.admin = isAdmin(req, ctx.hosted)
     if (since) {
       const missed = q.since.all(since)
-      if (missed.length) res.write(missed.map((c) => `id: ${c.rev}\ndata: ${JSON.stringify(c)}\n\n`).join(''))
+      const visible = res.admin ? missed : missed.filter((c) => !hiddenChangeIds(missed).has(c.id))
+      if (visible.length) res.write(visible.map((c) => `id: ${c.rev}\ndata: ${JSON.stringify(c)}\n\n`).join(''))
     }
     clients.add(res)
     const beat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS)
